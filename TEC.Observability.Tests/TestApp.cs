@@ -66,6 +66,13 @@ internal static class TestApp
         await app.StartAsync();
         return app;
     }
+
+    /// <summary>
+    /// Cópia da lista de um exportador em memória para leitura no teste. O exportador e o leitor periódico de métricas
+    /// adicionam itens em outra thread, sem lock: enumerar a lista original pode lançar "Collection was modified".
+    /// <c>ToArray</c> copia o array sem checar a versão; itens nulos de uma cópia no meio de um redimensionamento saem.
+    /// </summary>
+    public static List<T> Snapshot<T>(List<T> exported) where T : class => [.. exported.ToArray().OfType<T>()];
 }
 
 /// <summary>Responde às verificações HTTP sem rede e registra as chamadas recebidas.</summary>

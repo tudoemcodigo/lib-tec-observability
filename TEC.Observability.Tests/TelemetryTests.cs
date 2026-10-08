@@ -121,8 +121,8 @@ public class TelemetryTests
         app.Services.GetRequiredService<TracerProvider>().ForceFlush(5_000);
         app.Services.GetRequiredService<OpenTelemetry.Metrics.MeterProvider>().ForceFlush(5_000);
 
-        await Assert.That(spans.Any(a => a.Source.Name == name)).IsTrue();
-        await Assert.That(metrics.Any(m => m.MeterName == name)).IsTrue();
+        await Assert.That(TestApp.Snapshot(spans).Any(a => a.Source.Name == name)).IsTrue();
+        await Assert.That(TestApp.Snapshot(metrics).Any(m => m.MeterName == name)).IsTrue();
     }
 
     [Test]
@@ -141,7 +141,7 @@ public class TelemetryTests
         }
         app.Services.GetRequiredService<TracerProvider>().ForceFlush(5_000);
 
-        await Assert.That(spans.Any(a => a.Source.Name == name)).IsTrue();
+        await Assert.That(TestApp.Snapshot(spans).Any(a => a.Source.Name == name)).IsTrue();
     }
 
     // ---------- OTLP: variáveis padrão e configuração tardia ----------
@@ -253,10 +253,10 @@ public class TelemetryTests
         app.Services.GetRequiredService<TracerProvider>().ForceFlush(5_000);
         app.Services.GetRequiredService<MeterProvider>().ForceFlush(5_000);
 
-        await Assert.That(spans.Any(a => a.Source.Name == registeredSource.Name)).IsTrue();
-        await Assert.That(spans.Any(a => a.Source.Name == unregisteredSource.Name)).IsFalse();
-        await Assert.That(metrics.Any(m => m.MeterName == registeredMeter.Name)).IsTrue();
-        await Assert.That(metrics.Any(m => m.MeterName == unregisteredMeter.Name)).IsFalse();
+        await Assert.That(TestApp.Snapshot(spans).Any(a => a.Source.Name == registeredSource.Name)).IsTrue();
+        await Assert.That(TestApp.Snapshot(spans).Any(a => a.Source.Name == unregisteredSource.Name)).IsFalse();
+        await Assert.That(TestApp.Snapshot(metrics).Any(m => m.MeterName == registeredMeter.Name)).IsTrue();
+        await Assert.That(TestApp.Snapshot(metrics).Any(m => m.MeterName == unregisteredMeter.Name)).IsFalse();
     }
 
     [Test]
@@ -276,14 +276,12 @@ public class TelemetryTests
         // em memória adiciona spans em outra thread sem lock na lista (copiar com o construtor de List pode lançar ArgumentException).
         for (var i = 0; i < 100; i++)
         {
-            var snapshot = Snapshot(exported);
+            var snapshot = TestApp.Snapshot(exported);
             if (condition(snapshot))
                 return snapshot;
             await Task.Delay(50);
         }
 
-        return Snapshot(exported);
+        return TestApp.Snapshot(exported);
     }
-
-    private static List<Activity> Snapshot(List<Activity> exported) => [.. exported.ToArray().OfType<Activity>()];
 }
