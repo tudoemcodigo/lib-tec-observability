@@ -43,7 +43,7 @@ public class ExporterTests
         app.Services.GetRequiredService<TracerProvider>().ForceFlush(5_000);
 
         await Assert.That(exporter.Configured).IsEqualTo(1);
-        await Assert.That(spans.Any(a => a.OperationName == "Operacao")).IsTrue();
+        await Assert.That(TestApp.Snapshot(spans).Any(a => a.OperationName == "Operacao")).IsTrue();
         // Pipeline comum montado pela biblioteca: recurso do serviço.
         var resource = app.Services.GetRequiredService<TracerProvider>().GetResource().Attributes.ToDictionary(a => a.Key, a => a.Value);
         await Assert.That(resource["service.name"]).IsEqualTo(serviceName);

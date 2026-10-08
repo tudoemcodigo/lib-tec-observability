@@ -21,9 +21,12 @@ namespace TEC.Observability.Tests.Security.Adversarial;
 /// uma dependência travada) precisam falhar rápido, com leitura e memória limitadas, sem derrubar a requisição.
 /// </summary>
 /// <remarks>
-/// Os limites de tempo são folgados (máquinas de CI lentas e testes em paralelo): pegam laços sem fim e crescimento
-/// quadrático/exponencial, não pequenas regressões de desempenho (essas ficam com o TEC.Observability.Benchmarks).
+/// Os limites de tempo são folgados (máquinas de CI lentas): pegam laços sem fim e crescimento quadrático/exponencial, não
+/// pequenas regressões de desempenho (essas ficam com o TEC.Observability.Benchmarks). A classe roda isolada, sem nenhum
+/// outro teste em paralelo: mede tempo de parede, e centenas de testes simultâneos num runner de 2 vCPUs atrasavam a
+/// rajada de 2 mil sondas além do limite sem nenhuma regressão.
 /// </remarks>
+[NotInParallel]
 public class DosResistanceTests
 {
     private static readonly TimeSpan Fast = TimeSpan.FromSeconds(5);
