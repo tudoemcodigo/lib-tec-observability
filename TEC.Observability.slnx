@@ -1,0 +1,12 @@
+<Solution>
+  <Folder Name="/samples/">
+    <Project Path="samples/TEC.Observability.LoadGenerator/TEC.Observability.LoadGenerator.csproj" />
+    <Project Path="samples/TEC.Observability.SampleApi/TEC.Observability.SampleApi.csproj" />
+  </Folder>
+  <Project Path="TEC.Observability.Azure.Tests/TEC.Observability.Azure.Tests.csproj" />
+  <Project Path="TEC.Observability.Azure/TEC.Observability.Azure.csproj" />
+  <Project Path="TEC.Observability.Benchmarks/TEC.Observability.Benchmarks.csproj" />
+  <Project Path="TEC.Observability.LoadTests/TEC.Observability.LoadTests.csproj" />
+  <Project Path="TEC.Observability.Tests/TEC.Observability.Tests.csproj" />
+  <Project Path="TEC.Observability/TEC.Observability.csproj" />
+</Solution>

@@ -1,0 +1,15 @@
+<Project Sdk="Microsoft.NET.Sdk.Web">
+
+  <!--
+    API de exemplo com o TEC.Observability ligado como num serviço real: correlation id, traces, métricas, logs, redação da query
+    string, chamada HTTP de saída com Baggage e liveness/readiness com uma dependência simulada.
+    Serve de alvo para o gerador de carga (TEC.Observability.LoadGenerator), para os testes de carga
+    (TEC.Observability.LoadTests) e para os benchmarks de pipeline. Não é publicada: IsPackable = false.
+    Framework, lock file e auditoria de pacotes em ../../Directory.Build.props.
+  -->
+
+  <ItemGroup>
+    <ProjectReference Include="..\..\TEC.Observability\TEC.Observability.csproj" />
+  </ItemGroup>
+
+</Project>

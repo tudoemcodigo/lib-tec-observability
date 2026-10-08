@@ -1,0 +1,28 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!-- Testes do pacote base, sem referência ao Azure: provam que None/Otlp/Console e exportadores próprios funcionam só com ele. -->
+
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <FrameworkReference Include="Microsoft.AspNetCore.App" />
+    <PackageReference Include="Microsoft.Data.Sqlite" />
+    <PackageReference Include="OpenTelemetry.Exporter.InMemory" />
+    <PackageReference Include="TUnit" />
+    <!-- Testes de propriedade / fuzzing (Security/Fuzzing): só no projeto de testes, o pacote não depende dele -->
+    <PackageReference Include="FsCheck" />
+  </ItemGroup>
+
+  <!-- O TestHost acompanha a versão do ASP.NET Core de cada TFM. -->
+  <!-- Versão por runtime (8.0.x no net8.0, 10.0.x no net10.0) definida no Directory.Packages.props -->
+  <ItemGroup>
+    <PackageReference Include="Microsoft.AspNetCore.TestHost" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\TEC.Observability\TEC.Observability.csproj" />
+  </ItemGroup>
+
+</Project>

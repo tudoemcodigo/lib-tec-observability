@@ -1,0 +1,87 @@
+name: Integração com identidade gerenciada
+
+# Único cenário que o CI central (ci.yml) não cobre: a aplicação de teste sobe como Production e a biblioteca só aceita
+# Workload/Managed Identity, o que exige um runner DENTRO do Azure (self-hosted) com identidade real. A integração com
+# OIDC em runner hospedado (Application Insights de testes) já roda no ci.yml.
+#
+# Gatilhos: agendado (domingo) e manual, só da main. Protegido pelo environment "integracao-azure" e ligado pela Variable
+# TEC_RUNNER_AZURE=true (sem runner provisionado, o job é pulado em vez de ficar na fila). Não marque como check obrigatório.
+on:
+  schedule:
+    - cron: '0 6 * * 0'   # domingo, 06:00 UTC
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: integracao-azure-${{ github.ref }}
+  cancel-in-progress: false
+
+env:
+  DOTNET_NOLOGO: true
+  DOTNET_CLI_TELEMETRY_OPTOUT: true
+  DOTNET_SKIP_FIRST_TIME_EXPERIENCE: true
+  SOLUTION: TEC.Observability.slnx
+  TESTS: TEC.Observability.Azure.Tests/TEC.Observability.Azure.Tests.csproj
+
+jobs:
+  self-hosted:
+    name: Integração (identidade gerenciada real)
+    runs-on: [self-hosted, azure]
+    # O runner tem identidade no Azure: só a main pode usá-la
+    if: vars.TEC_RUNNER_AZURE == 'true' && github.ref == 'refs/heads/main'
+    # O environment exige as proteções configuradas no repositório (branch main, revisores) antes de chegar ao runner
+    environment: integracao-azure
+    timeout-minutes: 30
+    permissions:
+      contents: read
+      packages: read   # credencial do feed interno (TEC.Vault.AzureKeyVault usado pelos testes)
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Setup .NET
+        uses: actions/setup-dotnet@a98b56852c35b8e3190ac28c8c2271da59106c68 # v6.0.0
+        with:
+          global-json-file: global.json
+
+      # Runner self-hosted: a credencial do feed NÃO vai para o NuGet.Config do usuário (sobreviveria ao job). Fica numa
+      # cópia do nuget.config do repositório em $RUNNER_TEMP, usada só pelo restore e apagada no fim.
+      - name: Credencial do feed interno
+        shell: bash
+        env:
+          NUGET_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          CONFIG="$RUNNER_TEMP/nuget.config"
+          cp nuget.config "$CONFIG"
+          chmod 600 "$CONFIG"
+          dotnet nuget update source tec-interno --username "$GITHUB_ACTOR" --password "$NUGET_TOKEN" \
+            --store-password-in-clear-text --configfile "$CONFIG"
+
+      - name: Restore (lock file obrigatório)
+        run: dotnet restore "$SOLUTION" --locked-mode --configfile "$RUNNER_TEMP/nuget.config"
+
+      - name: Build
+        run: dotnet build "$TESTS" -c Release -f net10.0 --no-restore
+
+      # Sem identidade válida no runner, os testes de identidade se pulam com o motivo: confira na saída que passaram
+      - name: Testes de integração
+        env:
+          TEC_TESTES_OBSERVABILITY_IDENTIDADE: workload
+          TEC_TESTES_VAULT_URI: ${{ vars.TEC_TESTES_VAULT_URI }}
+          TEC_TESTES_TENANT_ID: ${{ vars.TEC_TESTES_TENANT_ID }}
+          TEC_TESTES_OBSERVABILITY_APPINSIGHTS_CONNECTION_STRING: ${{ secrets.TEC_OBSERVABILITY_APPINSIGHTS_CONNECTION_STRING }}   # opcional (fallback do cofre)
+        run: >
+          dotnet test --project "$TESTS" -f net10.0 -c Release --no-build
+          --treenode-filter "/*/*/*/*[Category=Integracao]"
+          --output Detailed
+
+      - name: Remover credencial do feed
+        if: ${{ always() }}
+        shell: bash
+        run: rm -f "$RUNNER_TEMP/nuget.config"

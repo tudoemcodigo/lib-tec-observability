@@ -1,0 +1,102 @@
+name: Performance
+
+# Suítes pesadas e de carga: só sob demanda (Actions -> Performance -> Run workflow). Não rodam no PR nem na publicação.
+#   rapida     -> TEC.Observability.LoadTests [Carga-CI]: carga curta com limites folgados (input suite = rapida ou todas)
+#   carga      -> TEC.Observability.LoadTests [Carga-Pesada]: carga sustentada, rajada nos health checks, soak, volume de logs
+#   seguranca  -> TEC.Observability.Tests [Seguranca-Pesada]: fuzzing estendido da redação de dados
+#   benchmarks -> TEC.Observability.Benchmarks, só no disparo manual
+on:
+  workflow_dispatch:
+    inputs:
+      suite:
+        description: "Suítes de carga: pesadas (Carga-Pesada e Seguranca-Pesada), rapida (Carga-CI) ou todas"
+        type: choice
+        options: [pesadas, rapida, todas]
+        default: pesadas
+      soak_segundos:
+        description: "Duração do soak (segundos)"
+        type: number
+        default: 600
+      api_segundos:
+        description: "Duração da carga sustentada na API de exemplo (segundos)"
+        type: number
+        default: 120
+      api_concorrencia:
+        description: "Conexões simultâneas na carga sustentada"
+        type: number
+        default: 64
+      health_concorrencia:
+        description: "Sondas simultâneas na rajada contra os health checks"
+        type: number
+        default: 256
+      logs:
+        description: "Registros do teste de volume do arquivo de logs"
+        type: number
+        default: 1000000
+      fuzz_casos:
+        description: "Casos por propriedade no fuzzing estendido"
+        type: number
+        default: 20000
+      benchmarks:
+        description: "Rodar também os benchmarks"
+        type: boolean
+        default: false
+      benchmark_filtro:
+        description: "Filtro do BenchmarkDotNet (* = todos)"
+        type: string
+        default: "*"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: performance-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  rapida:
+    if: inputs.suite != 'pesadas'
+    uses: tudoemcodigo/tec-workflows/.github/workflows/dotnet-test.yml@v1
+    permissions:
+      contents: read
+      packages: read
+      id-token: write
+    with:
+      name: carga rápida
+      tests: TEC.Observability.LoadTests /*/*/*/*[Category=Carga-CI]
+      private-feed: true
+      artifact: carga
+
+  pesados:
+    if: inputs.suite != 'rapida'
+    uses: tudoemcodigo/tec-workflows/.github/workflows/dotnet-test.yml@v1
+    permissions:
+      contents: read
+      packages: read
+      id-token: write
+    with:
+      name: suítes pesadas
+      tests: |
+        TEC.Observability.LoadTests /*/*/*/*[Category=Carga-Pesada]
+        TEC.Observability.Tests /*/*/*/*[Category=Seguranca-Pesada]
+      private-feed: true
+      env: |
+        TEC_CARGA_SOAK_SEGUNDOS=${{ inputs.soak_segundos || 600 }}
+        TEC_CARGA_API_SEGUNDOS=${{ inputs.api_segundos || 120 }}
+        TEC_CARGA_API_CONCORRENCIA=${{ inputs.api_concorrencia || 64 }}
+        TEC_CARGA_HEALTH_CONCORRENCIA=${{ inputs.health_concorrencia || 256 }}
+        TEC_CARGA_LOGS=${{ inputs.logs || 1000000 }}
+        TEC_CARGA_FUZZ_CASOS=${{ inputs.fuzz_casos || 20000 }}
+      artifact: pesados
+      timeout-minutes: 120
+
+  benchmarks:
+    if: inputs.benchmarks
+    uses: tudoemcodigo/tec-workflows/.github/workflows/dotnet-benchmark.yml@v1
+    permissions:
+      contents: read
+      packages: read
+    with:
+      project: TEC.Observability.Benchmarks
+      private-feed: true
+      filter: ${{ inputs.benchmark_filtro }}

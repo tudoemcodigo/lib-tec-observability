@@ -1,0 +1,4 @@
+# Rótulos do runner self-hosted (integracao-azure.yml) para o actionlint
+self-hosted-runner:
+  labels:
+    - azure

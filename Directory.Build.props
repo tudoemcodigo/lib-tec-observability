@@ -1,0 +1,11 @@
+<Project>
+
+  <!-- Identidade do componente; as convenções comuns (alvos, análise, segurança, AOT, metadados NuGet) vêm do build/ -->
+  <PropertyGroup>
+    <TecComponent>TEC.Observability</TecComponent>
+    <Version>0.0.1</Version>
+  </PropertyGroup>
+
+  <Import Project="build/Tec.Build.props" />
+
+</Project>
