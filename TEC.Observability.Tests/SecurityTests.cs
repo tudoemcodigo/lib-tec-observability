@@ -642,17 +642,28 @@ public class SecurityTests
     }
 
     [Test]
+    [NotInParallel] // BaggageHostPolicy.Default é do processo: os hosts de teste em paralelo o redefinem
     public async Task Dotnet_propagator_also_filters_outside_middleware_handled_request()
     {
-        // Sem política da requisição vale a do processo (definida por outros testes só com "localhost") ou nenhuma: em ambos os
-        // casos 127.0.0.1 não recebe o Baggage — um serviço em segundo plano não vaza o Baggage para terceiros.
+        // Sem política da requisição vale a do processo: um serviço em segundo plano não vaza o Baggage para um host fora dela.
+        // A política do processo é fixada aqui e restaurada no fim; herdar a do último host de teste (ex.: 127.0.0.1 liberado
+        // pelos testes de DoS) tornava o resultado dependente da ordem dos testes.
         var propagator = new HostFilteringDistributedContextPropagator(DistributedContextPropagator.CreateDefaultPropagator());
         var written = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
         using var request = new HttpRequestMessage(HttpMethod.Get, "http://127.0.0.1:8080/a");
         using var activity = new Activity("saida").AddBaggage("tenant", "x").Start();
 
+        var previous = BaggageHostPolicy.Default;
+        BaggageHostPolicy.Default = new BaggageHostPolicy(["localhost"]);
         BaggageHostPolicy.Current = null;
-        propagator.Inject(activity, request, (_, name, value) => written[name] = value);
+        try
+        {
+            propagator.Inject(activity, request, (_, name, value) => written[name] = value);
+        }
+        finally
+        {
+            BaggageHostPolicy.Default = previous;
+        }
 
         await Assert.That(written.ContainsKey("traceparent")).IsTrue();
         await Assert.That(written.Keys.Any(HostFilteringDistributedContextPropagator.IsBaggageField)).IsFalse();
