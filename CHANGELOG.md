@@ -5,7 +5,7 @@ O formato segue o [Keep a Changelog](https://keepachangelog.com/pt-BR/1.1.0/) e 
 [Versionamento Semântico](https://semver.org/lang/pt-BR/). Os pacotes `TEC.Observability` e `TEC.Observability.Azure`
 saem sempre juntos, com a mesma versão.
 
-## [0.0.1] - não publicado
+## [0.0.1] - 2026-10-08
 
 Primeira versão.
 
