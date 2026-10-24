@@ -6,6 +6,11 @@
 > **TEC.Observability.Azure**, feita sobre o código-fonte. Cada achado cita `arquivo:linha` conferido no fonte; os marcados
 > com 🧪 foram reproduzidos num programa à parte (fora do repositório).
 
+> [!NOTE]
+> **Documento histórico (2026-10-19).** Números de linha, contagens de testes (323 e 363 por alvo na época; hoje 371 no
+> `TEC.Observability.Tests`) e o estado dos achados são os da data da revisão. Para o comportamento atual, vale o código e
+> os demais documentos; as decisões que vieram dos achados estão nos [ADRs](adr/README.md).
+
 ## 📑 Sumário
 
 - [📋 Escopo](#-escopo)
@@ -379,7 +384,7 @@ no próprio projeto; preferir user-secrets.
 ### O-03 — Workflows reutilizáveis por tag
 
 `ci.yml:28`, `release.yml` e `performance.yml` usam `tudoemcodigo/tec-workflows/...@v2`. Actions de terceiros estão por
-SHA (ex.: `integracao-azure.yml:43`), mas a tag `v1` é móvel: quem tiver escrita no `tec-workflows` muda o que roda aqui
+SHA (ex.: `integracao-azure.yml:43`), mas a tag `v2` é móvel: quem tiver escrita no `tec-workflows` muda o que roda aqui
 com `packages: write` e `id-token: write`. Aceitável por ser da mesma organização; registrar a decisão em
 [seguranca.md](seguranca.md#️-build-e-cadeia-de-suprimentos) ou fixar por SHA com Dependabot.
 
@@ -394,8 +399,8 @@ para rodar os testes.
 
 ## 🩹 Correções aplicadas — 2026-10-19
 
-Branch `fix/revisao-tecnica-2026-10-19` (sem commit). Versão sobe para **0.1.0** (opção pública nova, sem quebra de API;
-ver [CHANGELOG](../CHANGELOG.md)).
+Branch `fix/revisao-tecnica-2026-10-19` (sem commit). As correções, inclusive a opção pública nova
+`RedactAllLoggerProviders`, foram incorporadas à **0.0.1** (ver [CHANGELOG](../CHANGELOG.md)).
 
 | ID | Status | Arquivos alterados | Teste de regressão |
 |---|---|---|---|
@@ -475,14 +480,14 @@ Corrigidos nesta revisão (o doc dizia X, o código faz Y):
 | [correlation-id.md](correlation-id.md) | Aviso equivalente sobre `Provider: None` na seção de visão geral |
 | [README.md](README.md) | Linha desta revisão na tabela de temas e no mapa |
 
-Pendentes (dependem da decisão sobre os achados):
+Pendentes na data da revisão (todos resolvidos depois, junto com as correções acima):
 
-- XML de `ObservabilityProvider.None` (`Configuration/ObservabilityOptions.cs:16`) repete "correlation id continua ativo";
-  ajustar junto com a correção de [B-01](#b-01--com-provider-none-o-correlation-id-não-se-propaga).
-- [seguranca.md](seguranca.md): incluir no modelo de ameaças "segredo em stdout" e "DTO em atributo de log", e na
-  configuração de produção o desligamento do `Logging:Console`.
-- [traces-metricas-logs.md](traces-metricas-logs.md)/[configuracao.md](configuracao.md): citar as variáveis OTLP por
-  sinal como não suportadas na validação, até a correção de [B-02](#b-02--validação-do-otlp-ignora-variáveis-por-sinal).
+- ✅ XML de `ObservabilityProvider.None` (`Configuration/ObservabilityOptions.cs`): ajustado com a correção de
+  [B-01](#b-01--com-provider-none-o-correlation-id-não-se-propaga).
+- ✅ [seguranca.md](seguranca.md): "segredo em stdout" e "DTO em atributo de log" no modelo de ameaças e o desligamento do
+  `Logging:Console` na configuração de produção.
+- ✅ [exportadores.md](exportadores.md): as variáveis OTLP por sinal passaram a ser aceitas na validação
+  ([B-02](#b-02--validação-do-otlp-ignora-variáveis-por-sinal)).
 
 ---
-⬅️ [Desenvolvimento local](desenvolvimento.md) · [📚 Índice](README.md)
+⬅️ [Desenvolvimento local](desenvolvimento.md) · [📚 Índice](README.md) · [Decisões de arquitetura](adr/README.md) ➡️

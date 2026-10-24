@@ -59,7 +59,7 @@ pacote, vira dependência com a mesma versão.
 
 | Item | Detalhe |
 |---|---|
-| SDK | .NET 10 (`global.json`: `10.0.100`, `rollForward: latestFeature`) e os runtimes .NET 8 e ASP.NET Core 8 para os testes em `net8.0` |
+| SDK | .NET 10 (`global.json`: `10.0.401`, `rollForward: latestPatch`) e os runtimes .NET 8 e ASP.NET Core 8 para os testes em `net8.0` |
 | Feed `tec-interno` | Para o `TEC.Vault.AzureKeyVault` em modo pacote, o padrão: necessário para compilar a solução inteira (PAT *classic* com `read:packages`; o GitHub Packages exige token mesmo para pacote público) |
 | Azure CLI | Só para a integração local (`az login`) |
 | Docker | Não é necessário |

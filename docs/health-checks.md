@@ -13,6 +13,7 @@
   - [🗄️ Banco de dados](#️-banco-de-dados)
   - [🔑 SSO / provedor de identidade](#-sso--provedor-de-identidade)
   - [🌐 APIs externas e microsserviços](#-apis-externas-e-microsserviços)
+  - [🔌 Conectividade TCP (Redis, RabbitMQ, Kafka, Sockets)](#-conectividade-tcp-redis-rabbitmq-kafka-sockets)
   - [🧩 Verificações próprias](#-verificações-próprias)
   - [📄 JSON da resposta](#-json-da-resposta)
 - [⚙️ Opções](#️-opções)
@@ -166,7 +167,13 @@ builder.Services.AddTecObservability(builder.Configuration)
     .AddTcpHealthCheck("KafkaBroker", "kafka-01.internal", 9092, failureStatus: HealthStatus.Degraded);
 ```
 
-Tags: `ready`, `tcp`. Conexão é estabelecida e fechada de forma limpa, com respeito rigoroso ao `CancellationToken` e orçamento em `HealthCheckBudgets`.
+| Parâmetro | Padrão | Descrição |
+|---|---|---|
+| `host` / `port` | — | Nome ou IP do host (não vazio) e porta TCP de 1 a 65535 |
+| `failureStatus` | `Unhealthy` | Status em caso de falha |
+| `timeout` | 3 s | Tempo máximo da conexão (> 0); precisa ser menor que `HealthChecks:Timeout` (conferido na subida) |
+
+Tags: `ready` e `tcp`. A conexão é aberta e descartada logo em seguida, respeitando o cancelamento da execução.
 
 ### 🧩 Verificações próprias
 
@@ -181,7 +188,7 @@ observability.HealthChecks.AddCheck<QueueHealthCheck>("Fila", tags: [HealthCheck
 |---|---|---|
 | `Live` | `live` | Só o processo (falha reinicia) |
 | `Ready` | `ready` | Dependências (falha tira do balanceamento) |
-| `Database` / `Sso` / `External` | `database` / `sso` / `external` | Tipo da dependência |
+| `Database` / `Sso` / `External` / `Tcp` | `database` / `sso` / `external` / `tcp` | Tipo da dependência |
 
 > [!NOTE]
 > Verificações registradas direto no `IHealthChecksBuilder` não entram na conferência de prazo da subida: garanta que
@@ -281,15 +288,15 @@ Com detalhes (`Development`, ou `ExposeDetails: true` com `ManagementPort`):
 | Exceção | Quando |
 |---|---|
 | `ArgumentException`: *Já existe um health check chamado 'X'.* | Nome repetido (inclusive o do liveness) |
-| `ArgumentException` | Nome vazio, connection string ou consulta vazia; URL não `http(s)` ou com usuário e senha |
+| `ArgumentException` | Nome vazio, connection string, consulta ou host (TCP) vazio; URL não `http(s)` ou com usuário e senha |
 | `ArgumentException`: *Tags não aceita itens vazios.* | `HttpHealthCheckOptions.Tags` com item vazio |
-| `ArgumentOutOfRangeException` | `timeout` ≤ 0; `HttpHealthCheckOptions.Timeout` ≤ 0; `Retries` fora de 0–5 |
+| `ArgumentOutOfRangeException` | `timeout` ≤ 0; `HttpHealthCheckOptions.Timeout` ≤ 0; `Retries` fora de 0–5; `port` do TCP fora de 1–65535 |
 
 **Na subida** (`OptionsValidationException` / `InvalidOperationException`):
 
 | Mensagem (trecho) | Causa |
 |---|---|
-| `O health check 'X' pode levar até Ns (...), o que não cabe em HealthChecks:Timeout (...)` | `(Timeout + 1s) × (Retries + 1)` ou o `timeout` do banco ≥ `HealthChecks:Timeout` |
+| `O health check 'X' pode levar até Ns (...), o que não cabe em HealthChecks:Timeout (...)` | `(Timeout + 1s) × (Retries + 1)` de um check HTTP, ou o `timeout` do banco ou do TCP, ≥ `HealthChecks:Timeout` |
 | `HealthChecks:ExposeDetails=true fora de Development exige HealthChecks:ManagementPort...` | Detalhes sem porta de gerência |
 | `HealthChecks:LiveEndpoint deve começar com '/'.` / `... devem ser rotas diferentes.` | Rotas inválidas |
 | `HealthChecks:CacheDuration deve estar entre 0 e 1 minuto.` / `HealthChecks:Timeout deve estar entre 1 segundo e 5 minutos.` | Fora do intervalo |

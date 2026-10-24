@@ -68,6 +68,7 @@ builder.Services.AddTecObservability(builder.Configuration)
 | `AddDatabaseHealthCheck(...)` (3 sobrecargas) | Banco relacional, qualquer driver ADO.NET ([health checks](health-checks.md#️-banco-de-dados)) |
 | `AddSsoHealthCheck(name, Uri, configure?)` | Documento de descoberta OpenID Connect |
 | `AddExternalServiceHealthCheck(name, Uri, configure?)` | API externa ou microsserviço |
+| `AddTcpHealthCheck(name, host, port, failureStatus?, timeout?)` | Conectividade TCP (Redis, RabbitMQ, Kafka...) ([health checks](health-checks.md#-conectividade-tcp-redis-rabbitmq-kafka-sockets)) |
 | `Services` / `Configuration` | Container e configuração passados ao registro |
 | `Options` | Opções vistas **no registro** (em tempo de execução, use `IOptions<ObservabilityOptions>`) |
 | `HealthChecks` | `IHealthChecksBuilder` nativo, para verificações próprias (use as tags de `HealthCheckTags`) |

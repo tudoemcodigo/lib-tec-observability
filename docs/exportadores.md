@@ -108,8 +108,7 @@ O Datadog Agent possui receptor nativo de OpenTelemetry (`otlp_config: { receive
     "Provider": "Otlp",
     "Otlp": {
       "Endpoint": "http://127.0.0.1:4317",
-      "Protocol": "Grpc",
-      "AllowInsecureTransport": true
+      "Protocol": "Grpc"
     }
   }
 }
@@ -171,8 +170,7 @@ Tanto na AWS (ECS/EKS via AWS Distro for OpenTelemetry) quanto no Google Cloud (
     "Provider": "Otlp",
     "Otlp": {
       "Endpoint": "http://localhost:4317",
-      "Protocol": "Grpc",
-      "AllowInsecureTransport": true
+      "Protocol": "Grpc"
     }
   }
 }

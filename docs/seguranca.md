@@ -46,7 +46,7 @@ flowchart LR
 | Rajada de requisições virando carga nas dependências | Execução única por tag, cache (`CacheDuration`) e prazo (`Timeout`) |
 | Verificação travada prendendo todas as sondas | Prazo da execução inteira com abandono da verificação |
 | Token, senha ou connection string indo para o backend | [Redação](redacao.md) antes de qualquer exportador: nomes sensíveis, query string, credenciais em URL, `Bearer`/`Basic`, pares `chave=valor` |
-| Nome/versão de segredo em `url.full` | Chamadas do `HttpClient` a cofres do Azure não geram span; spans do Azure SDK com `/secrets/***` e `az.keyvault.*` = `***` |
+| Nome/versão de segredo em `url.full` | Chamadas do `HttpClient` a cofres (Azure, AWS, GCP, HashiCorp Vault, Infisical) não geram span; spans do Azure SDK com `/secrets/***` e `az.keyvault.*` = `***` |
 | Dados sensíveis no JSON de health | `data` de chave sensível → `Redacted`; textos cortados em 1024 e redigidos; exceção só com `ExposeExceptionDetails`; stack trace nunca |
 | Mensagem gigante esgotando memória/disco | Arquivo de log: mensagem até 32 K, exceção/escopos até 64 K, registro até 192 K, buffer com teto de 256 K caracteres; documento OIDC até 256 KB |
 | Cliente forçando amostragem com `traceparent` | **Não mitigado** com `ParentBased` ([abaixo](#-amostragem-e-traceparent-externo)) |

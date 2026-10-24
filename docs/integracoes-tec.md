@@ -133,7 +133,7 @@ Consulte a [documentação do TEC.Vault](https://github.com/tudoemcodigo/lib-tec
 ## 🛡️ Segurança
 
 > [!IMPORTANT]
-> O nome e a versão dos segredos nunca vão para os traces: chamadas do `HttpClient` a cofres do Azure não geram span e os
+> O nome e a versão dos segredos nunca vão para os traces: chamadas do `HttpClient` a cofres (Azure, AWS, GCP, HashiCorp Vault, Infisical) não geram span e os
 > spans do Azure SDK saem com `/secrets/***` e `az.keyvault.*` = `***` ([redacao.md](redacao.md#-traces)).
 
 ---

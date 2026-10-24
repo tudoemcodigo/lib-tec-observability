@@ -21,7 +21,7 @@ internal static class SensitiveKeys
     [
         "password", "passwd", "passphrase", "secret", "token", "apikey", "accesskey", "accountkey", "privatekey", "connectionstring",
         "authorization", "credential", "cookie", "signature", "sessionid", "jwt", "subscriptionkey",
-        "cardnumber", "creditcard", "cvv", "cvc",
+        "cardnumber", "creditcard", "cvv", "cvc", "functionskey", "assertion", "instrumentationkey",
     ];
 
     /// <summary>Nomes curtos sensíveis só quando são o nome inteiro (como sufixo casariam com nomes comuns).</summary>
@@ -119,23 +119,35 @@ internal static class SensitiveText
         var result = RedactUrls(text);
         result = RedactKeyValues(result);
         result = RedactAuthorizationSchemes(result);
+        result = RedactBracketPairs(result);
         return result;
     }
 
-    /// <summary>URL absoluta http/https sem credenciais, sem fragmento e com cada valor da query trocado (<c>?a=Redacted</c>).</summary>
-    public static string RedactUrl(Uri uri) =>
-        $"{uri.Scheme}{Uri.SchemeDelimiter}{uri.Authority}{uri.AbsolutePath}{TelemetryRedaction.RedactQuery(uri.Query)}";
+    /// <summary>URL absoluta sem credenciais, sem fragmento e com cada valor da query trocado (<c>?a=Redacted</c>).</summary>
+    public static string RedactUrl(Uri uri)
+    {
+        var query = NeedsQueryRedaction(uri.Query) ? TelemetryRedaction.RedactQuery(uri.Query) : uri.Query;
+        var authority = uri.Authority;
+        if (!string.IsNullOrEmpty(uri.UserInfo))
+        {
+            var at = authority.IndexOf('@');
+            if (at >= 0)
+                authority = authority[(at + 1)..];
+        }
+
+        return $"{uri.Scheme}{Uri.SchemeDelimiter}{authority}{uri.AbsolutePath}{query}";
+    }
 
     /// <summary><c>true</c> quando a URL tem algo a redigir: query string, fragmento ou usuário e senha.</summary>
     public static bool NeedsRedaction(Uri uri) =>
-        uri is { IsAbsoluteUri: true } && (uri.Scheme == Uri.UriSchemeHttp || uri.Scheme == Uri.UriSchemeHttps)
+        uri is { IsAbsoluteUri: true }
         && (NeedsQueryRedaction(uri.Query) || uri.Fragment.Length > 1 || !string.IsNullOrEmpty(uri.UserInfo));
 
     /// <summary>Query string ainda não redigida (já redigida: vazia, <c>?*</c> ou só valores <c>Redacted</c>).</summary>
     private static bool NeedsQueryRedaction(string query) =>
         TelemetryRedaction.HasQuery(query) && !string.Equals(TelemetryRedaction.RedactQuery(query), query, StringComparison.Ordinal);
 
-    /// <summary>Cada URL http/https do texto com algo a redigir vira o formato redigido.</summary>
+    /// <summary>Cada URL do texto com algo a redigir vira o formato redigido.</summary>
     internal static string RedactUrls(string text)
     {
         var index = text.IndexOf("://", StringComparison.Ordinal);
@@ -172,17 +184,21 @@ internal static class SensitiveText
         return builder is null ? text : builder.Append(text, copied, text.Length - copied).ToString();
     }
 
-    /// <summary>Início de <c>http</c>/<c>https</c> imediatamente antes de <c>://</c>, ou -1.</summary>
+    /// <summary>Início do esquema (RFC 3986) imediatamente antes de <c>://</c>, ou -1.</summary>
     private static int SchemeStart(string text, int delimiter)
     {
-        foreach (var scheme in (ReadOnlySpan<string>)["https", "http"])
+        if (delimiter <= 0)
+            return -1;
+
+        var start = delimiter - 1;
+        while (start >= 0 && (char.IsAsciiLetterOrDigit(text[start]) || text[start] is '+' or '-' or '.'))
+            start--;
+
+        var schemeStart = start + 1;
+        if (schemeStart < delimiter && char.IsAsciiLetter(text[schemeStart]))
         {
-            var start = delimiter - scheme.Length;
-            if (start >= 0 && text.AsSpan(start, scheme.Length).Equals(scheme, StringComparison.OrdinalIgnoreCase)
-                && (start == 0 || !char.IsAsciiLetterOrDigit(text[start - 1])))
-            {
-                return start;
-            }
+            if (schemeStart == 0 || !char.IsAsciiLetterOrDigit(text[schemeStart - 1]))
+                return schemeStart;
         }
 
         return -1;
@@ -210,7 +226,7 @@ internal static class SensitiveText
                 // "://" de URL (já tratada) ou "C:/": não é separador de par.
             }
             else if (KeyBefore(text, index) is { IsEmpty: false } key && SensitiveKeys.IsSensitive(key)
-                && ValueAfter(text, next, IsCookieHeader(key)) is var (valueStart, valueEnd) && valueEnd > valueStart
+                && ValueAfter(text, next, IsCookieHeader(key), IsAuthorizationHeader(key), text[index] == '=') is var (valueStart, valueEnd) && valueEnd > valueStart
                 && !text.AsSpan(valueStart, valueEnd - valueStart).Equals(RedactedValue, StringComparison.Ordinal))
             {
                 builder ??= new StringBuilder(text.Length);
@@ -226,11 +242,11 @@ internal static class SensitiveText
         return builder is null ? text : builder.Append(text, copied, text.Length - copied).ToString();
     }
 
-    /// <summary>Palavra (letras, dígitos e separadores de nome) antes do separador, pulando espaços e uma aspa de fechamento.</summary>
+    /// <summary>Palavra (letras, dígitos e separadores de nome) antes do separador, pulando espaços, tabulações e uma aspa de fechamento.</summary>
     private static ReadOnlySpan<char> KeyBefore(string text, int separator)
     {
         var end = separator;
-        while (end > 0 && text[end - 1] == ' ')
+        while (end > 0 && (text[end - 1] == ' ' || text[end - 1] == '\t'))
             end--;
         if (end > 0 && text[end - 1] is '"' or '\'')
             end--;
@@ -246,15 +262,15 @@ internal static class SensitiveText
     private static bool IsCookieHeader(ReadOnlySpan<char> key) =>
         key.Equals("Cookie", StringComparison.OrdinalIgnoreCase) || key.Equals("Set-Cookie", StringComparison.OrdinalIgnoreCase);
 
+    private static bool IsAuthorizationHeader(ReadOnlySpan<char> key) =>
+        key.Equals("Authorization", StringComparison.OrdinalIgnoreCase) || key.Equals("Proxy-Authorization", StringComparison.OrdinalIgnoreCase);
+
     /// <summary>
-    /// Trecho do valor depois do separador: entre aspas (sem as aspas, pulando aspas escapadas com <c>\</c>) ou até <c>;</c>,
-    /// <c>,</c>, <c>&amp;</c>, espaço, aspa ou fecha-chave. O esquema <c>Bearer</c>/<c>Basic</c> depois de <c>Authorization:</c>
-    /// é mantido e só a credencial sai. Com <paramref name="toEndOfLine"/> (cabeçalhos <c>Cookie</c>/<c>Set-Cookie</c>), o valor
-    /// sem aspas vai até o fim da linha: todos os cookies saem, não só o primeiro.
+    /// Trecho do valor depois do separador.
     /// </summary>
-    private static (int Start, int End) ValueAfter(string text, int start, bool toEndOfLine)
+    private static (int Start, int End) ValueAfter(string text, int start, bool isCookie, bool isAuthorization, bool isEquals)
     {
-        while (start < text.Length && text[start] == ' ')
+        while (start < text.Length && (text[start] == ' ' || text[start] == '\t'))
             start++;
         if (start >= text.Length)
             return (start, start);
@@ -268,10 +284,45 @@ internal static class SensitiveText
             return close < 0 ? (start + 1, text.Length) : (start + 1, close);
         }
 
-        if (toEndOfLine)
+        if (isAuthorization)
+        {
+            var firstSpace = text.AsSpan(start).IndexOf(' ');
+            if (firstSpace > 0)
+            {
+                var scheme = text.AsSpan(start, firstSpace);
+                var isWord = true;
+                foreach (var c in scheme)
+                {
+                    if (!char.IsAsciiLetter(c)) { isWord = false; break; }
+                }
+
+                if (isWord)
+                {
+                    start += firstSpace + 1;
+                    while (start < text.Length && (text[start] == ' ' || text[start] == '\t'))
+                        start++;
+                }
+            }
+
+            var lineEnd = text.AsSpan(start).IndexOfAny('\r', '\n');
+            var endLimit = lineEnd < 0 ? text.Length : start + lineEnd;
+            var sep = text.AsSpan(start, endLimit - start).IndexOfAny(';', ']', '}');
+            return (start, sep < 0 ? endLimit : start + sep);
+        }
+
+        if (isCookie)
         {
             var lineEnd = text.AsSpan(start).IndexOfAny('\r', '\n');
             return (start, lineEnd < 0 ? text.Length : start + lineEnd);
+        }
+
+        if (isEquals)
+        {
+            var lineEnd = text.AsSpan(start).IndexOfAny('\r', '\n');
+            var limit = lineEnd < 0 ? text.Length : start + lineEnd;
+            var semi = text.AsSpan(start, limit - start).IndexOf(';');
+            if (semi >= 0)
+                return (start, start + semi);
         }
 
         if (SchemeLength(text.AsSpan(start)) is > 0 and var schemeLength)
@@ -347,6 +398,43 @@ internal static class SensitiveText
 
     /// <summary>Caracteres de token (RFC 6750 <c>b64token</c>) e de Base64.</summary>
     private static bool IsCredentialChar(char c) => char.IsAsciiLetterOrDigit(c) || c is '-' or '.' or '_' or '~' or '+' or '/' or '=';
+
+    /// <summary>Pares formatados como <c>[chave, valor]</c> (KeyValuePair.ToString() de dicionários e cabeçalhos).</summary>
+    internal static string RedactBracketPairs(string text)
+    {
+        var index = text.IndexOf('[');
+        if (index < 0)
+            return text;
+
+        StringBuilder? builder = null;
+        var copied = 0;
+        while (index >= 0 && index < text.Length)
+        {
+            var comma = text.IndexOf(',', index);
+            var close = comma >= 0 ? text.IndexOf(']', comma) : -1;
+            if (comma > index && close > comma)
+            {
+                var keySpan = text.AsSpan(index + 1, comma - index - 1).Trim();
+                if (SensitiveKeys.IsSensitive(keySpan))
+                {
+                    var valStart = comma + 1;
+                    while (valStart < close && (text[valStart] == ' ' || text[valStart] == '\t'))
+                        valStart++;
+
+                    if (close > valStart && !text.AsSpan(valStart, close - valStart).Equals(RedactedValue, StringComparison.Ordinal))
+                    {
+                        builder ??= new StringBuilder(text.Length);
+                        builder.Append(text, copied, valStart - copied).Append(RedactedValue);
+                        copied = close;
+                    }
+                }
+            }
+
+            index = close > 0 ? text.IndexOf('[', close) : -1;
+        }
+
+        return builder is null ? text : builder.Append(text, copied, text.Length - copied).ToString();
+    }
 }
 
 /// <summary>
@@ -380,8 +468,11 @@ internal static class SensitiveValue
         redacted = null;
         switch (value)
         {
-            case string or IDictionary:
+            case string:
                 return false;
+
+            case IDictionary dict:
+                return TryRedactDictionary(dict, out redacted);
 
             case string[] texts:
                 return TryRedactItems(texts, texts.Length, out redacted);
@@ -400,6 +491,36 @@ internal static class SensitiveValue
                 redacted = safe;
                 return true;
         }
+    }
+
+    private static bool TryRedactDictionary(IDictionary dict, [NotNullWhen(true)] out object? redacted)
+    {
+        redacted = null;
+        var entries = new List<string>();
+        var changed = false;
+        foreach (DictionaryEntry entry in dict)
+        {
+            var keyStr = entry.Key?.ToString() ?? string.Empty;
+            var valStr = entry.Value?.ToString() ?? string.Empty;
+            if (SensitiveKeys.IsSensitive(keyStr))
+            {
+                entries.Add($"[{keyStr}, {SensitiveText.RedactedValue}]");
+                changed = true;
+            }
+            else
+            {
+                var safe = SensitiveText.Redact(valStr);
+                if (!ReferenceEquals(safe, valStr))
+                    changed = true;
+                entries.Add($"[{keyStr}, {safe}]");
+            }
+        }
+
+        if (!changed)
+            return false;
+
+        redacted = string.Join(", ", entries);
+        return true;
     }
 
     /// <summary>Itens como texto, varridos; se algum muda, a cópia com todos os itens como texto (redigidos).</summary>

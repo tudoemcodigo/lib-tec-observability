@@ -124,16 +124,29 @@ internal sealed class LogFileRecordExporter : BaseExporter<LogRecord>
                     if (record.LogLevel < _settings.MinimumLevel || record.LogLevel == LogLevel.None)
                         continue;
 
-                    Append(record);
-                    PeakBufferLength = Math.Max(PeakBufferLength, _buffer.Length);
-                    if (_buffer.Length >= MaxBufferedChars)
-                        Flush();
+                    var recordStartOffset = _buffer.Length;
+                    try
+                    {
+                        Append(record);
+                        PeakBufferLength = Math.Max(PeakBufferLength, _buffer.Length);
+                        if (_buffer.Length >= MaxBufferedChars)
+                            Flush();
+                    }
+                    catch (Exception ex) when (ex is not (IOException or UnauthorizedAccessException))
+                    {
+                        _buffer.Length = recordStartOffset;
+                        _buffer.Append("[erro ao formatar registro de log]\n");
+                    }
                 }
 
                 Flush();
                 return ExportResult.Success;
             }
             catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+            {
+                return ExportResult.Failure;
+            }
+            catch
             {
                 return ExportResult.Failure;
             }
@@ -152,8 +165,27 @@ internal sealed class LogFileRecordExporter : BaseExporter<LogRecord>
         if (_buffer.Length == 0)
             return;
 
-        var path = ResolvePath(ByteCount(_buffer));
-        using (var stream = new FileStream(path, FileMode.Append, FileAccess.Write, FileShare.ReadWrite | FileShare.Delete))
+        var bytes = ByteCount(_buffer);
+        var attempts = 0;
+        while (attempts < 10)
+        {
+            var path = ResolvePath(bytes);
+            try
+            {
+                using (var stream = new FileStream(path, FileMode.Append, FileAccess.Write, FileShare.Read))
+                    WriteUtf8(_buffer, stream);
+                _buffer.Clear();
+                return;
+            }
+            catch (IOException) when (attempts < 9)
+            {
+                _sequence++;
+                attempts++;
+            }
+        }
+
+        var finalPath = ResolvePath(bytes);
+        using (var stream = new FileStream(finalPath, FileMode.Append, FileAccess.Write, FileShare.Read))
             WriteUtf8(_buffer, stream);
         _buffer.Clear();
     }
@@ -346,31 +378,47 @@ internal sealed class LogFileRecordExporter : BaseExporter<LogRecord>
     /// </summary>
     private void AppendScope(LogRecordScope scope)
     {
-        foreach (var item in scope)
+        try
         {
-            if (item.Key == "{OriginalFormat}" || _scopesTruncated)
-                continue;
-
-            // Quantidade de escopos não tem limite: passado o tamanho máximo do registro, os demais são omitidos.
-            if (_buffer.Length - _recordStart >= MaxRecordLength)
+            foreach (var item in scope)
             {
-                _buffer.Append(" ").Append(TruncatedMarker);
-                _scopesTruncated = true;
-                continue;
-            }
+                if (item.Key == "{OriginalFormat}" || _scopesTruncated)
+                    continue;
 
-            _buffer.Append(_scopeSeparator);
-            _scopeSeparator = " ";
-            if (item.Key.Length > 0)
-            {
-                AppendText(item.Key, MaxDetailLength, multiline: false);
-                _buffer.Append('=');
-            }
+                // Quantidade de escopos não tem limite: passado o tamanho máximo do registro, os demais são omitidos.
+                if (_buffer.Length - _recordStart >= MaxRecordLength)
+                {
+                    _buffer.Append(" ").Append(TruncatedMarker);
+                    _scopesTruncated = true;
+                    continue;
+                }
 
-            var value = item.Value is null or bool || !SensitiveKeys.IsSensitive(item.Key)
-                ? SensitiveText.Redact(Convert.ToString(item.Value, CultureInfo.InvariantCulture) ?? string.Empty)
-                : SensitiveText.RedactedValue;
-            AppendText(value, MaxDetailLength, multiline: true);
+                _buffer.Append(_scopeSeparator);
+                _scopeSeparator = " ";
+                if (item.Key.Length > 0)
+                {
+                    AppendText(item.Key, MaxDetailLength, multiline: false);
+                    _buffer.Append('=');
+                }
+
+                string value;
+                try
+                {
+                    value = item.Value is null or bool || !SensitiveKeys.IsSensitive(item.Key)
+                        ? SensitiveText.Redact(Convert.ToString(item.Value, CultureInfo.InvariantCulture) ?? string.Empty)
+                        : SensitiveText.RedactedValue;
+                }
+                catch
+                {
+                    value = "[erro no escopo]";
+                }
+
+                AppendText(value, MaxDetailLength, multiline: true);
+            }
+        }
+        catch
+        {
+            _buffer.Append(" [erro ao enumerar escopo]");
         }
     }
 

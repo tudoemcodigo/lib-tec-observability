@@ -27,7 +27,7 @@
 
 ```mermaid
 flowchart LR
-    T["dotnet test"] --> U["TEC.Observability.Tests<br/><sub>323 · net10.0 · net8.0 · sem ICU</sub>"]
+    T["dotnet test"] --> U["TEC.Observability.Tests<br/><sub>371 · net10.0 · net8.0 · sem ICU</sub>"]
     T --> AZ["TEC.Observability.Azure.Tests"]
     T --> L["TEC.Observability.LoadTests"]
     AZ --> AU["29 unitários<br/><sub>processo isolado</sub>"]
@@ -40,7 +40,7 @@ flowchart LR
 
 | Projeto | Categoria | Conteúdo | Testes |
 |---|---|---|---:|
-| `TEC.Observability.Tests` | *(sem categoria)* | Unidade, regressão e segurança rápida do pacote base (sem o pacote Azure) | 323 por alvo |
+| `TEC.Observability.Tests` | *(sem categoria)* | Unidade, regressão e segurança rápida do pacote base (sem o pacote Azure) | 371 por alvo |
 | `TEC.Observability.Tests` | `Seguranca-Pesada` | Fuzzing estendido (`[Explicit]`) | 1 |
 | `TEC.Observability.Azure.Tests` | *(sem categoria)* | Exportador do Azure Monitor e telemetria em processo isolado | 29 |
 | `TEC.Observability.Azure.Tests` | `Integracao` | Envio real ao Application Insights de testes e consulta KQL | 3 |

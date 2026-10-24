@@ -1,3 +1,7 @@
+<div align="center">
+<img src="https://www.tudoemcodigo.com/marca/PNG/tudoemcodigo-icone-512.png" alt="Tudo em Código" width="90" />
+</div>
+
 [🏠 TEC.Observability](../README.md) › 📚 Documentação
 
 # 📚 Documentação do TEC.Observability
@@ -29,6 +33,7 @@
 | 10 | [🧪 Testes](testes.md) | Suítes, categorias, como rodar local, variáveis `TEC_TESTES_*`/`TEC_CARGA_*` | — |
 | 11 | [💻 Desenvolvimento local](desenvolvimento.md) | Compilar (feed `tec-interno` por padrão, repositórios vizinhos sob demanda), lock files, samples | — |
 | 12 | [🔎 Revisão técnica](revisao-tecnica.md) | Achados de segurança, bugs, desempenho, organização e documentação (2026-10-19), com evidência e correção sugerida | — |
+| 13 | [🏛️ Decisões de arquitetura (ADRs)](adr/README.md) | Registros das decisões de arquitetura do componente: pacotes, exportadores, redação, correlation id, health checks, configuração e integrações | ADR 0001 a 0008 |
 | — | [🧰 Samples](../samples/README.md) | API de exemplo e gerador de carga | — |
 | — | [⚙️ CI/CD](../.github/workflows/README.md) | Workflows, Variables/Secrets e publicação | — |
 
@@ -54,6 +59,7 @@ flowchart TD
     TEC -->|sim| INT["🧭 integracoes-tec.md"]
     RED --> SEG["🛡️ seguranca.md"]
     SEG --> REV["🔎 revisao-tecnica.md"]
+    Q -->|entender o porquê das decisões| ADR["🏛️ adr/README.md"]
 ```
 
 ---

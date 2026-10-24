@@ -53,8 +53,14 @@ internal sealed class ContextPropagationListener : IHostedLifecycleService, IDis
         var listener = new ActivityListener
         {
             ShouldListenTo = source => Array.IndexOf(Sources, source.Name) >= 0,
-            Sample = static (ref ActivityCreationOptions<ActivityContext> _) => ActivitySamplingResult.PropagationData,
-            SampleUsingParentId = static (ref ActivityCreationOptions<string> _) => ActivitySamplingResult.PropagationData,
+            Sample = static (ref ActivityCreationOptions<ActivityContext> options) =>
+                options.Parent.TraceFlags.HasFlag(ActivityTraceFlags.Recorded)
+                    ? ActivitySamplingResult.AllDataAndRecorded
+                    : ActivitySamplingResult.PropagationData,
+            SampleUsingParentId = static (ref ActivityCreationOptions<string> options) =>
+                ActivityContext.TryParse(options.Parent, null, out var ctx) && ctx.TraceFlags.HasFlag(ActivityTraceFlags.Recorded)
+                    ? ActivitySamplingResult.AllDataAndRecorded
+                    : ActivitySamplingResult.PropagationData,
         };
         ActivitySource.AddActivityListener(listener);
         return listener;

@@ -148,7 +148,7 @@ Atributos do recurso, lidos das opções efetivas quando o provedor de telemetri
 | Rotas de `IgnoredPaths` (padrão `/health`, `/health/live`, `/health/ready`, `/swagger`) | Filtro da instrumentação ASP.NET Core, comparado por **segmento** (`/health` ignora `/health/live`, não `/healthcare`) |
 | `LiveEndpoint` e `ReadyEndpoint` configurados | Sempre ignorados (mesmo fora de `IgnoredPaths`) |
 | Sondagens HTTP dos health checks (`AddSsoHealthCheck`, `AddExternalServiceHealthCheck`) | Marcadas na requisição e filtradas na instrumentação do `HttpClient` |
-| Chamadas do `HttpClient` a cofres do Azure (`*.vault.azure.net`, `*.vault.azure.cn`, `*.vault.usgovcloudapi.net`, `*.vault.microsoftazure.de`, `*.managedhsm.azure.net`) | A URL traria nome e versão do segredo; as operações continuam visíveis pelos spans `TEC.Vault` |
+| Chamadas do `HttpClient` a cofres de segredos: Azure (`*.vault.azure.net`, `*.vault.azure.cn`, `*.vault.usgovcloudapi.net`, `*.vault.microsoftazure.de`, `*.managedhsm.azure.net`), AWS Secrets Manager (`secretsmanager.*.amazonaws.com`), GCP Secret Manager (`secretmanager.googleapis.com`), HashiCorp Vault (`/v1/secret`, `/v1/sys`) e Infisical (`/api/v1/secrets`, `/api/v2/secrets`) | A URL traria nome e versão do segredo; as operações continuam visíveis pelos spans `TEC.Vault` |
 
 Os filtros são compostos com os de quem também registrou a instrumentação (distro do Azure, `ServiceDefaults`, o próprio
 serviço): nenhum sobrescreve o outro. Com `Provider: None`, os filtros de rota da biblioteca não são aplicados (valem os

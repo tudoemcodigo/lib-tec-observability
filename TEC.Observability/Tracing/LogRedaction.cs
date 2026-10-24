@@ -76,6 +76,16 @@ internal sealed class LogRedactionProcessor : BaseProcessor<LogRecord>
                 if (key == OriginalFormatAttribute)
                 {
                     template = value as string;
+                    if (template is not null)
+                    {
+                        var safeTemplate = SensitiveText.Redact(template);
+                        if (!ReferenceEquals(safeTemplate, template))
+                        {
+                            redacted ??= [.. attributes];
+                            redacted[i] = new KeyValuePair<string, object?>(key, safeTemplate);
+                            record.Body = safeTemplate;
+                        }
+                    }
                     continue;
                 }
 
@@ -88,6 +98,13 @@ internal sealed class LogRedactionProcessor : BaseProcessor<LogRecord>
 
             if (redacted is not null)
                 record.Attributes = redacted;
+        }
+
+        if (record.Body is { } currentBody)
+        {
+            var safeBody = SensitiveText.Redact(currentBody);
+            if (!ReferenceEquals(safeBody, currentBody))
+                record.Body = safeBody;
         }
 
         if (record.FormattedMessage is not { } message)
