@@ -53,7 +53,7 @@
         "type": "Direct",
         "requested": "[0.0.1, )",
         "resolved": "0.0.1",
-        "contentHash": "/wjOXCJf4lEvgKIoqVqpMyjjRfTwmUxLCoEV9C3WxtPsda1vqtRpGW4hfMboSknmwwjDm6DBBod1ui98EoDNdg==",
+        "contentHash": "DAzdMpxQjEHWjKZoUimNLpVeze+Y18ofELNBD4iQ9yQDwnfq11t0DWRlqpenUJBu/ExyfXLID/6fsHDSvyE01w==",
         "dependencies": {
           "Azure.Identity": "1.21.0",
           "Azure.Security.KeyVault.Certificates": "4.9.2",
@@ -307,12 +307,12 @@
       "TEC.Core": {
         "type": "Transitive",
         "resolved": "0.0.1",
-        "contentHash": "+KSoC5KdNrI9H6fMRJVE1nLBDobTVZib3/TAtZ8e59b90FF9IndZIh30gee7FGaHGvLQIacgvgmQTXUp8J40EQ=="
+        "contentHash": "t73JcW3viVH3wMr6MXJGxkhN70fFcDkqi94psK6oI6QdnqY/jSnL266lI28jB+FNSqRXqQb4xCTNCt3Mku/K4A=="
       },
       "TEC.Vault": {
         "type": "Transitive",
         "resolved": "0.0.1",
-        "contentHash": "4r41dGxSuFURuzN0Tx4YLFULVeq0YoEw6PlIx+o1QdTM6m6wSFSObs2X+R5XFpPmapV7kUkZ8noIutGIKkYGyQ==",
+        "contentHash": "HetUn+UEQXgyeOIhwbuHRZ0UYN8yTCrovM7lBWEe4k4t/JXb9nM73mAUVyPFC4y0uFvL4iTm71wscbf3nyI5+g==",
         "dependencies": {
           "Polly.Core": "8.8.0",
           "TEC.Core": "0.0.1"
@@ -500,7 +500,7 @@
         "type": "Direct",
         "requested": "[0.0.1, )",
         "resolved": "0.0.1",
-        "contentHash": "/wjOXCJf4lEvgKIoqVqpMyjjRfTwmUxLCoEV9C3WxtPsda1vqtRpGW4hfMboSknmwwjDm6DBBod1ui98EoDNdg==",
+        "contentHash": "DAzdMpxQjEHWjKZoUimNLpVeze+Y18ofELNBD4iQ9yQDwnfq11t0DWRlqpenUJBu/ExyfXLID/6fsHDSvyE01w==",
         "dependencies": {
           "Azure.Identity": "1.21.0",
           "Azure.Security.KeyVault.Certificates": "4.9.2",
@@ -950,12 +950,12 @@
       "TEC.Core": {
         "type": "Transitive",
         "resolved": "0.0.1",
-        "contentHash": "+KSoC5KdNrI9H6fMRJVE1nLBDobTVZib3/TAtZ8e59b90FF9IndZIh30gee7FGaHGvLQIacgvgmQTXUp8J40EQ=="
+        "contentHash": "t73JcW3viVH3wMr6MXJGxkhN70fFcDkqi94psK6oI6QdnqY/jSnL266lI28jB+FNSqRXqQb4xCTNCt3Mku/K4A=="
       },
       "TEC.Vault": {
         "type": "Transitive",
         "resolved": "0.0.1",
-        "contentHash": "4r41dGxSuFURuzN0Tx4YLFULVeq0YoEw6PlIx+o1QdTM6m6wSFSObs2X+R5XFpPmapV7kUkZ8noIutGIKkYGyQ==",
+        "contentHash": "HetUn+UEQXgyeOIhwbuHRZ0UYN8yTCrovM7lBWEe4k4t/JXb9nM73mAUVyPFC4y0uFvL4iTm71wscbf3nyI5+g==",
         "dependencies": {
           "Microsoft.Extensions.Caching.Memory": "10.0.12",
           "Microsoft.Extensions.Configuration": "10.0.12",

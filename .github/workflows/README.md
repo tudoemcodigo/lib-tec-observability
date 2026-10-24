@@ -1,3 +1,7 @@
+<div align="center">
+<img src="https://www.tudoemcodigo.com/marca/PNG/tudoemcodigo-icone-512.png" alt="Tudo em Código" width="90" />
+</div>
+
 [🏠 TEC.Observability](../../README.md) › [📚 Documentação](../../docs/README.md) › ⚙️ CI/CD
 
 # ⚙️ CI/CD e publicação

@@ -49,9 +49,18 @@ Primeira versão oficial do ecossistema TEC.
 - `AddAzureMonitorExporter()` e `AzureMonitorExporterOptions` (`Observability:Azure`): exportador oficial para Azure Monitor /
   Application Insights via distro Microsoft, amostragem fixa e autenticação por chave ou Entra ID (Workload Identity e Managed Identity).
 
+### 📚 Documentação
+
+- Guia completo em `docs/` (configuração, exportadores, traces/métricas/logs, redação, health checks, correlation id,
+  .NET Aspire, integrações TEC, segurança, testes e desenvolvimento local), conferido contra o código, e a
+  [revisão técnica](docs/revisao-tecnica.md) de 2026-10-19.
+- [Registros de Decisões de Arquitetura](docs/adr/README.md) (ADR 0001 a 0008): pacotes, exportadores, redação,
+  correlation id, health checks, exposição mínima, configuração validada na subida e integrações.
+
 ### 🧪 Qualidade
 
-- 365+ testes unitários aprovados por TFM (`TEC.Observability.Tests` e `TEC.Observability.Azure.Tests`).
+- 400 testes unitários por TFM (371 em `TEC.Observability.Tests` e 29 em `TEC.Observability.Azure.Tests`), mais 3 de
+  integração com o Application Insights e as suítes de carga (11) e de fuzzing estendido, só sob demanda.
 - Testes de regressão, resistência a DoS, fuzzing (FsCheck), concorrência e vazamento de memória sob carga.
 - Compatibilidade testada em `net10.0`, `net8.0` e sem ICU.
 - CI/CD via `tudoemcodigo/tec-workflows@v2`.

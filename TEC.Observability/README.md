@@ -1,3 +1,7 @@
+<div align="center">
+<img src="https://www.tudoemcodigo.com/marca/PNG/tudoemcodigo-icone-512.png" alt="Tudo em Código" width="90" />
+</div>
+
 # 📡 TEC.Observability
 
 Deixa cada serviço ASP.NET Core observável do mesmo jeito: traces, métricas e logs com OpenTelemetry, destino escolhido por

@@ -25,7 +25,7 @@ concurrency:
 
 jobs:
   ci:
-    uses: tudoemcodigo/tec-workflows/.github/workflows/dotnet-ci.yml@v2
+    uses: tudoemcodigo/tec-workflows/.github/workflows/dotnet-ci.yml@v1
     permissions:
       contents: read
       pull-requests: read
@@ -40,7 +40,7 @@ jobs:
         TEC.Observability.Tests
         TEC.Observability.Azure.Tests /*/*/*/*[Category!=Integracao]
       integration-tests: TEC.Observability.Azure.Tests /*/*/*/*[Category=Integracao]
-      azure-client-id: ${{ vars.AZURE_CLIENT_ID }}
+      azure-client-id: ${{ vars.TEC_ENABLE_AZURE_INTEGRATION && vars.AZURE_CLIENT_ID || '' }}
       azure-tenant-id: ${{ vars.TEC_TESTES_TENANT_ID }}
       azure-env: |
         TEC_TESTES_VAULT_URI=${{ vars.TEC_TESTES_VAULT_URI }}

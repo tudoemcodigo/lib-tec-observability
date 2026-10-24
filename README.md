@@ -12,7 +12,7 @@ OpenTelemetry · OTLP, Azure Monitor, console ou arquivo · Exportadores plugáv
 [![.NET](https://img.shields.io/badge/.NET-8.0%20%7C%2010.0-512BD4?logo=dotnet&logoColor=white)](#-compatibilidade)
 [![Native AOT](https://img.shields.io/badge/Native%20AOT-pacote%20base-512BD4)](#-compatibilidade)
 [![Versão](https://img.shields.io/badge/vers%C3%A3o-0.0.1-blue)](CHANGELOG.md)
-[![Licença: MIT](https://img.shields.io/badge/licen%C3%A7a-MIT-green)](LICENSE)
+[![Licença: Apache 2.0](https://img.shields.io/badge/licen%C3%A7a-Apache%202.0-blue)](LICENSE)
 
 [📥 Instalação](#-instalação) · [🚀 Início rápido](#-início-rápido) · [📚 Documentação](docs/README.md) · [📝 Changelog](CHANGELOG.md) · [⚙️ CI/CD](.github/workflows/README.md)
 
@@ -184,7 +184,7 @@ flowchart LR
 | Peça | Papel |
 |---|---|
 | `AddTecObservability` | Registra opções e validação, pipeline OpenTelemetry, redação, exportadores do `Provider`, liveness e infraestrutura dos health checks; devolve o `ObservabilityBuilder` |
-| `ObservabilityBuilder` | Encadeia `AddExporter`, `AddActivitySource`, `AddMeter`, `AddDatabaseHealthCheck`, `AddSsoHealthCheck`, `AddExternalServiceHealthCheck` |
+| `ObservabilityBuilder` | Encadeia `AddExporter`, `AddActivitySource`, `AddMeter`, `AddDatabaseHealthCheck`, `AddSsoHealthCheck`, `AddExternalServiceHealthCheck`, `AddTcpHealthCheck` |
 | `UseTecObservability` | `UseCorrelationId` (middleware) + `MapTecHealthChecks` (endpoints) |
 | `HealthCheckResponseWriter` | JSON padronizado, também para endpoints próprios (`HealthCheckOptions.ResponseWriter`) |
 | `CorrelationId` | Nomes (`X-Correlation-ID`, `correlation.id`) e valor da requisição atual |
@@ -207,6 +207,8 @@ flowchart LR
 | [🧪 Testes](docs/testes.md) | Suítes, categorias, como rodar local e as variáveis `TEC_TESTES_*`/`TEC_CARGA_*` |
 | [💻 Desenvolvimento local](docs/desenvolvimento.md) | Compilar (feed `tec-interno` por padrão, repositórios vizinhos sob demanda), lock files e samples |
 | [🧰 Samples](samples/README.md) | API de exemplo e gerador de carga HTTP |
+| [🔎 Revisão técnica](docs/revisao-tecnica.md) | Achados de segurança, bugs, desempenho, organização e documentação (2026-10-19), com evidência e correção sugerida |
+| [🏛️ ADRs](docs/adr/README.md) | Registros das decisões de arquitetura do componente: pacotes, exportadores, redação, correlation id, health checks, configuração e integrações |
 | [⚙️ CI/CD](.github/workflows/README.md) | Workflows, gatilhos, Variables/Secrets e como publicar |
 
 ## ⚡ Compatibilidade
@@ -246,7 +248,7 @@ dotnet test --project TEC.Observability.Azure.Tests -c Release --treenode-filter
 dotnet test --project TEC.Observability.LoadTests -c Release --treenode-filter "/*/*/*/*[Category=Carga-CI]"      # carga rápida
 ```
 
-323 testes no `TEC.Observability.Tests` (em `net10.0`, `net8.0` e sem ICU: regressão, segurança, fuzzing, DoS e
+371 testes no `TEC.Observability.Tests` (em `net10.0`, `net8.0` e sem ICU: regressão, segurança, fuzzing, DoS e
 vazamento), 29 unitários e 3 de integração (Application Insights real) no `TEC.Observability.Azure.Tests`, 5 de carga
 rápida (`Carga-CI`) e as suítes pesadas (`Carga-Pesada` e 1 `Seguranca-Pesada`, o fuzzing estendido), estas de carga só
 sob demanda no `performance.yml` manual. Detalhes em [docs/testes.md](docs/testes.md).
@@ -266,4 +268,4 @@ juntos. Enquanto for `0.x`, mudanças incompatíveis podem ocorrer em versões M
 
 ## 📄 Licença
 
-[MIT](LICENSE) · Criado e mantido por **Roberto Oliveira**, equipe **Tudo em Código** · [github.com/tudoemcodigo](https://github.com/tudoemcodigo)
+[Apache 2.0](LICENSE) · Criado e mantido por **Roberto Oliveira**, equipe **Tudo em Código** · [github.com/tudoemcodigo](https://github.com/tudoemcodigo)

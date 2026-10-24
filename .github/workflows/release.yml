@@ -21,13 +21,16 @@ concurrency:
 
 jobs:
   release:
-    uses: tudoemcodigo/tec-workflows/.github/workflows/dotnet-release.yml@v2
+    uses: tudoemcodigo/tec-workflows/.github/workflows/dotnet-release.yml@v1
     permissions:
       contents: write          # tag e Release
       packages: write          # push no feed NuGet do GitHub
       actions: read            # CodeQL
+      checks: read             # gate ci-ok check run
+      pull-requests: read      # gate checagem de PRs abertos
       security-events: write    # CodeQL
       id-token: write          # teto exigido pelo dotnet-test.yml (o token só é emitido no job de integração com Azure)
+      attestations: write      # atestacao de proveniencia SLSA
     with:
       version: ${{ inputs.versao }}
       solution: TEC.Observability.slnx

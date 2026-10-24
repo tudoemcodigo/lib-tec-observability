@@ -1,3 +1,7 @@
+<div align="center">
+<img src="https://www.tudoemcodigo.com/marca/PNG/tudoemcodigo-icone-512.png" alt="Tudo em Código" width="90" />
+</div>
+
 # ☁️ TEC.Observability.Azure
 
 Exportador do **Azure Monitor / Application Insights** para o `TEC.Observability`, com a distro oficial do OpenTelemetry
