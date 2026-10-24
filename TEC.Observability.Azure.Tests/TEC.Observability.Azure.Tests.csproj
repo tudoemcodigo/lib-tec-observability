@@ -1,0 +1,54 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!-- Testes do pacote TEC.Observability.Azure: unitários e integração com o Application Insights real (categoria Integracao). -->
+
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <!-- Mesmo namespace dos testes do pacote base (evita "TEC.Observability.Azure" esconder o namespace Azure do SDK). -->
+    <RootNamespace>TEC.Observability.Tests</RootNamespace>
+    <!-- Mesmo id em todos os projetos de teste dos componentes TEC: um único "dotnet user-secrets set" vale para todos -->
+    <UserSecretsId>tudoemcodigo-tec-testes</UserSecretsId>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <FrameworkReference Include="Microsoft.AspNetCore.App" />
+    <!-- Cliente do Key Vault com transporte simulado: spans Azure.Core.Http de cofre (redação do caminho). -->
+    <PackageReference Include="Azure.Security.KeyVault.Secrets" />
+    <PackageReference Include="Microsoft.Data.Sqlite" />
+    <PackageReference Include="Microsoft.Extensions.Configuration.Json" />
+    <PackageReference Include="Microsoft.Extensions.Configuration.UserSecrets" />
+    <PackageReference Include="OpenTelemetry.Exporter.InMemory" />
+    <PackageReference Include="TUnit" />
+  </ItemGroup>
+
+  <!-- O TestHost acompanha a versão do ASP.NET Core de cada TFM. -->
+  <!-- Versão por runtime (8.0.x no net8.0, 10.0.x no net10.0) definida no Directory.Packages.props -->
+  <ItemGroup>
+    <PackageReference Include="Microsoft.AspNetCore.TestHost" />
+  </ItemGroup>
+
+  <!-- Aplicação de teste em memória compartilhada com os testes do pacote base. -->
+  <ItemGroup>
+    <Compile Include="..\TEC.Observability.Tests\TestApp.cs" Link="TestApp.cs" />
+  </ItemGroup>
+
+  <!--
+    Configuração local dos testes de integração (ver Integration\TestSettings.cs): além de variáveis de ambiente e
+    user-secrets, o arquivo TEC.Observability.Tests/appsettings.Local.json (ignorado pelo git; seções TecTestes e, por
+    compatibilidade, ApplicationInsights), copiado para a saída deste projeto.
+  -->
+  <ItemGroup>
+    <None Include="..\TEC.Observability.Tests\appsettings.Local.json" Link="appsettings.Local.json" CopyToOutputDirectory="PreserveNewest"
+          Condition="Exists('..\TEC.Observability.Tests\appsettings.Local.json')" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\TEC.Observability.Azure\TEC.Observability.Azure.csproj" />
+  </ItemGroup>
+
+  <!-- TEC.Vault.AzureKeyVault (pacote do feed interno, tec-interno): lê a connection string do Key Vault de testes, como em produção -->
+  <ItemGroup>
+    <TecReference Include="TEC.Vault.AzureKeyVault" />
+  </ItemGroup>
+
+</Project>

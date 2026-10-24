@@ -1,0 +1,24 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!--
+    Testes de carga: concorrência, rajadas nos health checks, carga HTTP na API de exemplo, soak (longa duração) e volume do
+    arquivo de logs. Os testes rápidos rodam no CI a cada push; os pesados têm [Explicit] e só rodam quando selecionados por
+    filtro (veja docs/testes.md). Framework, lock file e auditoria de pacotes em ../Directory.Build.props.
+  -->
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <FrameworkReference Include="Microsoft.AspNetCore.App" />
+    <PackageReference Include="OpenTelemetry.Exporter.InMemory" />
+    <PackageReference Include="TUnit" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\TEC.Observability\TEC.Observability.csproj" />
+    <ProjectReference Include="..\samples\TEC.Observability.SampleApi\TEC.Observability.SampleApi.csproj" />
+    <ProjectReference Include="..\samples\TEC.Observability.LoadGenerator\TEC.Observability.LoadGenerator.csproj" />
+  </ItemGroup>
+
+</Project>

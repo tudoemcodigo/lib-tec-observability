@@ -1,0 +1,15 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!--
+    Gerador de carga HTTP próprio (sem licença nem binário externo) para a API de exemplo (TEC.Observability.SampleApi). O mesmo
+    LoadRunner do TEC.Core, com os cenários deste componente. Uso e opções da linha de comando em samples/README.md.
+    Também é referenciado pelos testes de carga (TEC.Observability.LoadTests), que usam a classe LoadRunner em processo.
+    Não depende do TEC.Observability: só fala HTTP com a API.
+  -->
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <!-- CA5394: Random sorteia cenários e dados de carga (sem uso de segurança); gerador criptográfico só pioraria a vazão medida. -->
+    <NoWarn>$(NoWarn);CA5394</NoWarn>
+  </PropertyGroup>
+
+</Project>

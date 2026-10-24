@@ -1,0 +1,37 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!-- Configurações de build, segurança e metadados comuns: ..\Directory.Build.props -->
+
+  <PropertyGroup>
+    <!-- Mesmos namespaces do pacote base: AddAzureMonitorExporter aparece junto do AddTecObservability, sem using novo. -->
+    <RootNamespace>TEC.Observability</RootNamespace>
+    <Description>Conecta o TEC.Observability a um serviço de monitoramento gerenciado na nuvem, ativado só por configuração e com envio autenticado pela identidade da aplicação, sem chave guardada no código.</Description>
+    <PackageTags>observability;opentelemetry;azure-monitor;application-insights;tec</PackageTags>
+    <!--
+      Não declarado compatível com trimming/Native AOT: a distro Azure.Monitor.OpenTelemetry.AspNetCore 1.6.0 gera IL2026/IL3050 no
+      próprio código (binding de AzureMonitorOptions por reflexão, instrumentação de SqlClient, EventSource de profiling). O código
+      deste pacote não gera avisos; reavaliar quando a distro ficar limpa (ver README, "Compatibilidade").
+    -->
+    <IsAotCompatible>false</IsAotCompatible>
+    <IsTrimmable>false</IsTrimmable>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <FrameworkReference Include="Microsoft.AspNetCore.App" />
+  </ItemGroup>
+  <ItemGroup>
+    <PackageReference Include="Azure.Identity" />
+    <PackageReference Include="Azure.Monitor.OpenTelemetry.AspNetCore" />
+  </ItemGroup>
+
+  <!-- No pacote, vira dependência de TEC.Observability com a mesma versão. -->
+  <ItemGroup>
+    <ProjectReference Include="..\TEC.Observability\TEC.Observability.csproj" />
+  </ItemGroup>
+
+  <!-- Testes do pacote Azure (projeto separado, fora da convenção $(TecComponent).Tests) exercitam peças internas dos dois pacotes -->
+  <ItemGroup>
+    <InternalsVisibleTo Include="TEC.Observability.Azure.Tests" />
+  </ItemGroup>
+
+</Project>
