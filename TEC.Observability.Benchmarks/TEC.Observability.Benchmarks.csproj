@@ -1,0 +1,32 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!--
+    Micro-benchmarks (BenchmarkDotNet): tempo e alocação do que o TEC.Observability acrescenta a cada requisição (correlation id,
+    redação, filtros, health checks, logs) e do pipeline HTTP inteiro, com e sem a biblioteca.
+    Rodam sob demanda, sempre em Release (veja docs/testes.md): não fazem parte do dotnet test.
+    Framework, lock file e auditoria de pacotes em ../Directory.Build.props.
+  -->
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <!-- BenchmarkDotNet gera e compila um projeto por benchmark: símbolos completos e otimização obrigatórios -->
+    <DebugType>pdbonly</DebugType>
+    <Optimize>true</Optimize>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <FrameworkReference Include="Microsoft.AspNetCore.App" />
+    <PackageReference Include="BenchmarkDotNet" />
+  </ItemGroup>
+
+  <!-- O TestHost acompanha a versão do ASP.NET Core de cada TFM (pipeline HTTP em memória, sem sockets). -->
+  <!-- Versão por runtime (8.0.x no net8.0, 10.0.x no net10.0) definida no Directory.Packages.props -->
+  <ItemGroup>
+    <PackageReference Include="Microsoft.AspNetCore.TestHost" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\TEC.Observability\TEC.Observability.csproj" />
+    <ProjectReference Include="..\samples\TEC.Observability.SampleApi\TEC.Observability.SampleApi.csproj" />
+  </ItemGroup>
+
+</Project>
