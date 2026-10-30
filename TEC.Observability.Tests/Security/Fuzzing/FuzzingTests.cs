@@ -279,7 +279,9 @@ public partial class FuzzingTests
         {
             var exactPolicy = new BaggageHostPolicy([c.Exact]);
             var suffixPolicy = new BaggageHostPolicy(["*." + c.Suffix]);
-            var expectedExact = c.Exact == "*" || string.Equals(c.Host, c.Exact, StringComparison.OrdinalIgnoreCase);
+            // Host vazio nunca recebe baggage, nem com "*" (fail closed)
+            var expectedExact = c.Host.Length > 0
+                && (c.Exact == "*" || string.Equals(c.Host, c.Exact, StringComparison.OrdinalIgnoreCase));
             var expectedSuffix = c.Host.EndsWith("." + c.Suffix, StringComparison.OrdinalIgnoreCase) && c.Host.Length > c.Suffix.Length + 1;
             if (exactPolicy.Allows(c.Host) != expectedExact || suffixPolicy.Allows(c.Host) != expectedSuffix)
                 throw new InvalidOperationException($"host {Hostile.Show(c.Host)}, exato {Hostile.Show(c.Exact)}, sufixo {Hostile.Show(c.Suffix)}");
