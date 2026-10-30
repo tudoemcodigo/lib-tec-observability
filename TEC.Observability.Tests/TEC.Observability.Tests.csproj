@@ -15,8 +15,7 @@
     <PackageReference Include="FsCheck" />
   </ItemGroup>
 
-  <!-- O TestHost acompanha a versão do ASP.NET Core de cada TFM. -->
-  <!-- Versão por runtime (8.0.x no net8.0, 10.0.x no net10.0) definida no Directory.Packages.props -->
+  <!-- O TestHost acompanha a versão do ASP.NET Core do alvo (definida no Directory.Packages.props). -->
   <ItemGroup>
     <PackageReference Include="Microsoft.AspNetCore.TestHost" />
   </ItemGroup>

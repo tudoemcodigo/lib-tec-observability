@@ -199,7 +199,7 @@ public class DosResistanceTests
             services: s => s.ConfigureOpenTelemetryTracerProvider(t => t.AddInMemoryExporter(exported)),
             endpoints: a => a.MapGet("/muitos-parametros", () => "ok"),
             settings: [("Provider", "Otlp"), ("Otlp:Endpoint", "http://localhost:4317")]);
-        // ~45 mil caracteres: abaixo do limite de tamanho do Uri no .NET 8 (65.519)
+        // ~45 mil caracteres: abaixo do limite de tamanho do Uri (65.519)
         var query = "?" + string.Join('&', Enumerable.Range(0, 3_000).Select(i => $"p{i}=segredo{i}"));
 
         var watch = Stopwatch.StartNew();

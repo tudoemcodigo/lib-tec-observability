@@ -48,32 +48,66 @@ A redação é uma **heurística que prefere esconder a vazar**. Decisão de arq
 
 ## 🔑 Nomes sensíveis
 
-Um atributo (de log, de span, de escopo no arquivo, de `data` no health) é sensível quando o **fim** do nome, ignorando
-maiúsculas e os separadores `_`, `-`, `.`, `:` e espaço, é um destes — no singular ou no plural com `s`:
+Um atributo (de log, de span, de escopo exportado, de `data` no health) é sensível quando o **fim** do nome, ignorando
+maiúsculas, acentos e os separadores `_`, `-`, `.`, `:` e espaço, é um destes — no singular ou no plural com `s`:
 
 | Terminações | Só o nome inteiro |
 |---|---|
-| `password`, `passwd`, `passphrase`, `secret`, `token`, `apikey`, `accesskey`, `accountkey`, `privatekey`, `connectionstring`, `authorization`, `credential`, `cookie`, `signature`, `sessionid`, `jwt`, `subscriptionkey`, `cardnumber`, `creditcard`, `cvv`, `cvc` | `pwd`, `sig`, `otp`, `pin`, `cpf`, `cnpj`, `rg` |
+| `password`, `passwd`, `passphrase`, `secret`, `token`, `connectionstring`, `authorization`, `credential`, `cookie`, `signature`, `sessionid`, `jwt`, `cardnumber`, `creditcard`, `cvv`, `cvc`, `assertion` | `pwd`, `sig`, `otp`, `pin`, `cpf`, `cnpj`, `rg`, `chave` |
+| `*key` com qualificador de segredo: `apikey`, `accesskey`, `accountkey`, `privatekey`, `subscriptionkey`, `functionskey`, `instrumentationkey`, `secretkey`, `signingkey`, `signkey`, `encryptionkey`, `decryptionkey`, `masterkey`, `hmackey`, `sharedkey`, `clientkey`, `authkey`, `authenticationkey`, `sessionkey`, `cryptokey`, `privkey`, `saskey`, `storagekey`, `appkey`, `licensekey` | |
+| Português: `senha`, `palavrapasse`, `segredo`, `credencial`, `credenciais`, `chaveacesso`, `chavedeacesso`, `chaveapi`, `chavedaapi`, `chavedeapi`, `chaveprivada`, `chavesecreta`, `chaveassinatura`, `chavedeassinatura`, `chavecriptografia`, `chavedecriptografia`, `chavemestra`, `chavepix`, `tokenacesso`, `tokendeacesso`, `tokenatualizacao`, `tokendeatualizacao`, `tokenrenovacao`, `tokenderenovacao`, `codigoseguranca`, `codigodeseguranca`, `numerocartao`, `numerodocartao`, `cartaocredito`, `cartaodecredito` | |
+
+Em português o substantivo vem antes do qualificador (`SenhaAtual`, `SegredoCliente`), então **`senha`, `segredo` e
+`credencial` casam também no início do nome**. Os acentos são ignorados: `CódigoDeSegurança` e `NúmeroDoCartão` casam.
 
 | Nome | Sensível? |
 |---|:---:|
 | `DbPassword`, `access_token`, `X-Api-Key`, `http.request.header.authorization`, `db.connection_string`, `enduser.password` | ✅ |
 | `Cookies`, `.AspNetCore.Cookies`, `Secrets`, `ApiKeys`, `SessionId`, `Ocp-Apim-Subscription-Key` | ✅ |
+| `SecretKey`, `SigningKey`, `signing_key`, `EncryptionKey`, `MasterKey`, `aws.secret_access_key` | ✅ |
+| `Senha`, `NovaSenha`, `SenhaAtual`, `Segredo`, `Credenciais`, `Chave`, `ChaveDeAcesso`, `chave_privada`, `ChavePix`, `TokenDeAcesso`, `CódigoDeSegurança` | ✅ |
 | `cpf`, `cnpj`, `cvv`, `cvc`, `cardnumber`, `creditcard` (LGPD / PCI-DSS) | ✅ |
 | `TokenCount`, `TokenCounts`, `PasswordPolicy`, `Signed`, `Status`, `Pinned` | ❌ |
+| `Key`, `PartitionKey`, `CacheKey`, `IdempotencyKey`, `RoutingKey`, `SortKey`, `PublicKey`, `PrimaryKey`, `ForeignKey` | ❌ |
+| `ChaveNfe`, `ChavePrimaria`, `ChaveCache`, `Senhorio`, `Credenciamento`, `Assinatura` | ❌ |
+
+**Critério dos nomes com `Key`/`chave`:** só casam com um qualificador que indica segredo (`Secret`, `Signing`,
+`Encryption`, `Api`, `Privada`, `DeAcesso`...). `Key` e `chave` sozinhos dentro de um nome maior, e chaves de
+particionamento, cache, roteamento, idempotência, chave pública e chave primária, são dados de diagnóstico: casá-los
+apagaria informação útil sem esconder segredo. `Chave` como nome inteiro casa (não se sabe de que chave se trata).
+Efeito colateral aceito do casamento pelo início: `SenhaExpirada` ou `SegredoDeJustica` também viram `Redacted` quando o
+valor não é `bool`.
 
 Valores `null` e `bool` nunca são redigidos (não carregam segredo).
+
+### Nomes próprios do serviço
+
+`Observability:AdditionalSensitiveKeys` acrescenta nomes com o **mesmo critério das terminações** (fim do nome, sem
+diferenciar maiúsculas, acentos e separadores, plural com `s`). Vale para logs, spans, escopos, arquivo e health.
+
+```json
+{
+  "Observability": { "AdditionalSensitiveKeys": [ "Matricula", "NumeroBeneficio" ] }
+}
+```
+
+| Regra | Detalhe |
+|---|---|
+| Formato | Letras, dígitos e separadores (`_ - . :` e espaço); de 3 a 128 caracteres depois de tirar os separadores; até 64 nomes |
+| Validação | Na subida (`ValidateOnStart`): nome curto demais (`id` redigiria quase tudo), com `=`, `/` ou vazio derruba a inicialização |
+| Quando vale | Lida no `AddTecObservability` (vale já para os logs da subida) e de novo quando as opções são montadas (provedor de configuração tardio, ex.: cofre) |
+| Escopo | O processo inteiro, e a lista **só soma**: com vários hosts no mesmo processo ou a cada recarga da configuração, vale a união. Remover um nome exige reiniciar o processo |
 
 ---
 
 ## 📝 Texto livre
 
 Mensagens de log, valores de texto de atributos de log e de span, descrição de status de span, exceções de log,
-escopos no arquivo e textos do health passam por três varreduras:
+escopos exportados e textos do health passam por três varreduras:
 
 | Varredura | Antes | Depois |
 |---|---|---|
-| URLs `http`/`https` com query, fragmento ou usuário e senha | `https://user:senha@api/x?token=abc#frag` | `https://api/x?token=Redacted` |
+| URLs absolutas de qualquer esquema (`http`, `https`, `amqp`, `postgres`...) com query, fragmento ou usuário e senha | `https://user:senha@api/x?token=abc#frag` | `https://api/x?token=Redacted` |
 | Pares `chave=valor` / `chave: valor` de chave sensível (connection strings, JSON — inclusive com aspas escapadas no valor —, cabeçalhos, argumentos) | `Server=db;Password=abc;` · `"apiKey": "x\"yz"` | `Server=db;Password=Redacted;` · `"apiKey": "Redacted"` |
 | Cabeçalhos `Cookie:` / `Set-Cookie:` (valor sem aspas) | `Cookie: a=1; .AspNetCore.Session=abc` | `Cookie: Redacted` (até o fim da linha: todos os cookies) |
 | Credenciais `Bearer` / `Basic` em qualquer lugar | `Authorization: Bearer eyJhbGci...` | `Authorization: Bearer Redacted` |
@@ -81,6 +115,10 @@ escopos no arquivo e textos do health passam por três varreduras:
 Formato da query redigida: o mesmo da instrumentação do OpenTelemetry — `?a=1&b=2` vira `?a=Redacted&b=Redacted`; um
 trecho sem `=` pode ser o próprio segredo e vira `Redacted` (`?eyJhbGci...` → `?Redacted`). O fragmento (`#access_token=...`)
 é removido.
+
+A chave do par aceita letras acentuadas (`Senha=abc` → `Senha=Redacted`, `CódigoDeSegurança=123` →
+`CódigoDeSegurança=Redacted`). A varredura é linear mesmo com milhares de pares numa linha só (`token=a&token=a&...`): a
+busca do fim da linha e do próximo `;` é guardada e reaproveitada, e cada caractere é percorrido no máximo uma vez por busca.
 
 > [!WARNING]
 > **Pode redigir demais.** `status do token: expirado` vira `status do token: Redacted`, porque `token` é uma chave
@@ -125,7 +163,7 @@ Não há nada a ligar: a redação vale para qualquer `Provider` (inclusive `Non
 | Objeto (`record`, tipo anônimo, DTO, classe com `ToString`) | O texto do `ToString()` passa pela varredura de texto livre; com algo a redigir, o atributo vira esse texto redigido (`LoginRequest { User = ana, Password = Redacted }`) |
 | Coleção (`string[]`, `List<string>`, array de objetos) | Cada item vira texto e é varrido; com algo a redigir, o atributo vira um `string[]` com os itens redigidos. Arrays de números, datas e enums seguem como vieram; dicionários não são varridos |
 | Mensagem formatada | **Refeita a partir do modelo** (`{OriginalFormat}`) com os valores redigidos; sem modelo, cada valor original (≥ 3 caracteres) é trocado pelo redigido. Depois, varrida como texto livre |
-| `IHttpClientFactory` no .NET 8 | Os loggers padrão (que punham a URL completa na mensagem **e no escopo** `HTTP {Method} {Uri}`) são trocados por loggers equivalentes com a URL redigida, nas mesmas categorias (`System.Net.Http.HttpClient.{nome}.LogicalHandler`/`.ClientHandler`). Um cliente com logging próprio (`RemoveAllLoggers`/`AddLogger`) mantém o dele |
+| Escopos (`BeginScope`) | Só com `Observability:IncludeScopes`: os itens com chave em `AllowedScopeKeys` viram atributos redigidos ([escopos](#-escopos-de-log)) |
 
 ```csharp
 logger.LogInformation("Conectando com {ConnectionString}", "Server=db;User Id=app;Password=abc");
@@ -156,10 +194,33 @@ próprio):
   `RedactedException`; o nome do tipo original continua no texto. `Exception.Data` **não** é copiado.
 - Custo: um `ToString()` a mais por log com exceção.
 
+### 🧷 Escopos de log
+
+A API do OpenTelemetry não permite reescrever os escopos de um registro, então a biblioteca **não liga** o `IncludeScopes`
+do OpenTelemetry (com ele, os exportadores receberiam todos os escopos como foram registrados). Por padrão, nenhum escopo
+sai. Para exportar alguns:
+
+```json
+{
+  "Observability": {
+    "IncludeScopes": true,
+    "AllowedScopeKeys": [ "TenantId", "PedidoId" ]
+  }
+}
+```
+
+| Regra | Detalhe |
+|---|---|
+| Quais chaves | As de `AllowedScopeKeys` (sem diferenciar maiúsculas; `*` libera todas), mais o `correlation.id` da biblioteca, sempre |
+| Como saem | Como **atributos** do log (no OTLP, no Azure Monitor e no console, o mesmo lugar onde os escopos iriam) e no fim da linha do `LogFile` |
+| Valores | Nome sensível → `Redacted`; textos, objetos e coleções → varredura de texto livre; `null` não sai |
+| Nunca saem | Escopos sem chave (`BeginScope("pedido 42")`), o `{OriginalFormat}` de um escopo com modelo e chaves que já existem nos atributos do log (o atributo do log vence) |
+| Limite | Até 64 itens de escopo por log; até 64 chaves na lista, validadas na subida |
+| Quando vale | Lido no `AddTecObservability`, como o `Provider` |
+
 > [!CAUTION]
-> **Escopos (`BeginScope`) não podem ser reescritos** pela API do OpenTelemetry: `Otlp`, `Azure`, `Console` e exportadores
-> próprios os recebem **como foram registrados**. Só o `LogFile` os redige ao gravar. Não coloque segredos nem dados
-> pessoais em escopos.
+> Quem ligar o `IncludeScopes` do próprio OpenTelemetry (`OpenTelemetryLoggerOptions`, como faz o `ServiceDefaults` do
+> .NET Aspire) exporta **todos** os escopos, sem lista e sem redação, além dos atributos acima. Não ligue os dois.
 
 ### 🧵 Traces
 
@@ -169,8 +230,31 @@ próprio):
 | Descrição do status (`SetStatus(Error, descrição)`) | Redigida como texto livre; o código do status é mantido |
 | Spans de cliente (saída) | `url.full`/`http.url` sem valores de query, sem usuário e senha e sem fragmento — inclusive de instrumentações de terceiros |
 | Spans de servidor (ASP.NET Core) | `url.query` sempre redigida, mesmo com a redação da instrumentação desligada (a distro do Azure Monitor a desliga em `OTEL_DOTNET_EXPERIMENTAL_*_DISABLE_URL_QUERY_REDACTION`) |
-| Spans de cofres de segredos (Azure Key Vault, AWS Secrets Manager, GCP Secret Manager, HashiCorp Vault, Infisical) | `url.full`/`http.url`, `url.path`, `http.target` e o nome de exibição sem nome e versão (`/secrets/***`, `/v1/projects/.../secrets/***`, `/v1/secret/***`); `url.query` removida; nos spans `Azure.Security.KeyVault.*`, `az.keyvault.*` viram `***`. Duração e status ficam |
-| Chamadas do `HttpClient` a cofres (Azure, AWS, GCP, HashiCorp, Infisical) e sondagens de health | Nem geram span ([traces-metricas-logs.md](traces-metricas-logs.md#-o-que-não-gera-trace)) |
+| Spans de cofres de segredos ([quais](#-cofres-de-segredos)) | `url.full`/`http.url`, `url.path`, `http.target` e o nome de exibição sem nome e versão (`/secrets/***`, `/v1/projects/.../secrets/***`, `/v1/secret/***`); `url.query` removida; nos spans `Azure.Security.KeyVault.*`, `az.keyvault.*` viram `***`. Duração e status ficam |
+| Chamadas do `HttpClient` a cofres e sondagens de health | Nem geram span ([traces-metricas-logs.md](traces-metricas-logs.md#-o-que-não-gera-trace)) |
+
+#### 🔐 Cofres de segredos
+
+O cofre é reconhecido **pelo host**, nunca só pelo caminho: `/v1/secret`, `/v1/sys` e `/api/v1/secrets` também são
+caminhos de APIs comuns, e escondê-las tiraria do trace chamadas que nada têm de cofre.
+
+| Cofre | Como é reconhecido |
+|---|---|
+| Azure Key Vault e Managed HSM (`*.vault.azure.net`, `*.vault.azure.cn`, `*.vault.usgovcloudapi.net`, `*.vault.microsoftazure.de`, `*.managedhsm.azure.net`), AWS Secrets Manager (`secretsmanager.*.amazonaws.com`), GCP Secret Manager (`secretmanager.googleapis.com`) | Pelo host, sem configuração |
+| Cofres próprios: HashiCorp Vault, OpenBao, Infisical auto-hospedado, CyberArk Conjur... | Pelos hosts de `Observability:SecretStoreHosts` |
+
+```json
+{
+  "Observability": { "SecretStoreHosts": [ "vault.interno", "*.vault.svc.cluster.local" ] }
+}
+```
+
+- Formato de `BaggageAllowedHosts`: nome exato ou `*.sufixo` (que não inclui o próprio sufixo); `*` sozinho é recusado.
+  Até 64 itens, validados na subida.
+- Para um host configurado, **qualquer** caminho conta como cofre (`/v1/kv/data/x` vira `/v1/***`).
+- A lista vale para o processo inteiro e só soma, como `AdditionalSensitiveKeys`.
+- A biblioteca não conhece nenhum componente de cofre (nem o TEC.Vault): o que ele emite nas próprias fontes (`TEC.*`)
+  segue no trace como qualquer outra fonte.
 
 Sem nada a redigir, não há alocação: só a conferência dos nomes e buscas vetorizadas nos textos (uma URL só é lida como
 `Uri` quando tem `?`, `#` ou `@`). Objetos e coleções que não são `string[]` custam um `ToString()` por valor.
@@ -180,13 +264,18 @@ Sem nada a redigir, não há alocação: só a conferência dos nomes e buscas v
 > `exception.stacktrace` num `ActivityEvent`, que é imutável no .NET. Registre a exceção **em log** (a exceção do log é
 > redigida) ou use `activity.SetStatus(ActivityStatusCode.Error, descrição)`, cuja descrição é redigida.
 
+> [!NOTE]
+> Só a **query string**, o fragmento e as credenciais da URL são redigidos. O **caminho** (`url.path`, `url.full` sem
+> query) segue como veio, exceto nas chamadas a cofres de segredos: um token ou CPF no caminho (`/reset/<token>`,
+> `/clientes/12345678900`) chega ao backend. O nome do span usa o modelo da rota (`http.route`), não o caminho real.
+
 ### 📄 Arquivo de logs
 
 Além do que já chega redigido pelo processador, o `LogFile`:
 
 | Item | Regra |
 |---|---|
-| Escopos | Nome sensível → `Redacted`; demais valores → varredura de texto livre |
+| Escopos | Os exportados (`IncludeScopes` + `AllowedScopeKeys`) e os atributos fora do modelo da mensagem, no fim da linha; redigidos de novo ao gravar (nome sensível → `Redacted`; demais valores → varredura de texto livre) |
 | Exceção (`ToString()`) | Já redigida pelo processador; o texto gravado passa de novo pela varredura de texto livre |
 | Caracteres de controle | Quebras viram nova linha recuada; ANSI e demais controles escapados (`\u001B`) — sem *log forging* |
 | Tamanho | Mensagem até 32 K caracteres; exceção e cada escopo até 64 K; registro inteiro até 192 K (escopos excedentes omitidos com `…[truncado]`) |
@@ -206,12 +295,16 @@ Só se aplica com `HealthChecks:ExposeDetails` ligado (sem detalhes, o JSON traz
 
 ## ⚙️ Opções
 
-A redação no pipeline do OpenTelemetry não tem opções: não dá para desligá-la nem ampliar a lista de nomes. Para dados
-que a heurística não reconhece (CPF, e-mail, texto livre do usuário), não registre — ou mascare antes, na aplicação.
+A redação no pipeline do OpenTelemetry não pode ser desligada. Para dados que a heurística não reconhece (CPF em texto
+livre, e-mail, texto do usuário), não registre — ou mascare antes, na aplicação.
 
 | Opção | Padrão | Efeito |
 |---|---|---|
 | `Observability:RedactAllLoggerProviders` | `false` | Estende a redação da mensagem formatada e da exceção aos provedores de log fora do OpenTelemetry (console, Debug, EventLog...). Ver [Uso](#-uso) |
+| `Observability:AdditionalSensitiveKeys` | `[]` | Nomes sensíveis próprios do serviço ([nomes próprios](#nomes-próprios-do-serviço)) |
+| `Observability:SecretStoreHosts` | `[]` | Hosts de cofres próprios ([cofres](#-cofres-de-segredos)) |
+| `Observability:IncludeScopes` | `false` | Exporta escopos de log como atributos redigidos ([escopos](#-escopos-de-log)) |
+| `Observability:AllowedScopeKeys` | `[]` | Chaves de escopo exportadas (`*` = todas; `correlation.id` sempre) |
 
 ---
 
@@ -220,7 +313,10 @@ que a heurística não reconhece (CPF, e-mail, texto livre do usuário), não re
 | Situação | Causa | O que fazer |
 |---|---|---|
 | Valor inofensivo aparece como `Redacted` | Nome termina com uma palavra sensível, ou texto com `token:`/`password=` | Renomeie o atributo (ex.: `TokenCount` em vez de `UserToken`) ou reescreva a mensagem |
-| Segredo apareceu no backend | Escopo (`BeginScope`), evento de span (`RecordException`) ou formato que a heurística não reconhece | Veja os limites acima; tire o segredo da origem |
+| Segredo apareceu no backend | Evento de span (`RecordException`), escopo com o `IncludeScopes` do próprio OpenTelemetry ligado, ou formato que a heurística não reconhece | Veja os limites acima; tire o segredo da origem |
+| Chamada a uma API comum sumiu do trace | Host listado em `SecretStoreHosts` (inclusive por `*.sufixo`) | Tire o host da lista |
+| Chamada ao cofre próprio aparece no trace | Host do cofre fora de `SecretStoreHosts` | Inclua o host |
+| Escopo não aparece no backend | `IncludeScopes` desligado ou chave fora de `AllowedScopeKeys` | Ligue e liste a chave |
 | Segredo apareceu no stdout do contêiner | Console (ou outro `ILoggerProvider`) fora do pipeline do OpenTelemetry | Desligue `Logging:Console` ou ligue `RedactAllLoggerProviders` ([Uso](#-uso)) |
 | `exception.type` = `RedactedException` no backend | A exceção tinha algo a redigir e foi trocada pela cópia redigida | Normal: o tipo original está no início do texto da exceção |
 

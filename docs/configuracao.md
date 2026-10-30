@@ -148,6 +148,10 @@ builder.Configuration.AddTecVaultAzureKeyVault(
     "IgnoredPaths": [ "/health", "/swagger" ],
     "AllowInboundBaggage": false,
     "BaggageAllowedHosts": [ "*.svc.cluster.local" ],
+    "AdditionalSensitiveKeys": [ "Matricula" ],
+    "SecretStoreHosts": [ "vault.interno" ],
+    "IncludeScopes": true,
+    "AllowedScopeKeys": [ "TenantId" ],
     "Otlp": {
       "Endpoint": "https://otel-collector:4317",
       "Protocol": "Grpc"
@@ -157,6 +161,7 @@ builder.Configuration.AddTecVaultAzureKeyVault(
       "RollingInterval": "Day",
       "MaxFileSizeBytes": 10485760,
       "RetainedFileCount": 31,
+      "InstanceName": "pod-1",
       "MinimumLevel": "Warning"
     },
     "HealthChecks": {
@@ -187,6 +192,10 @@ builder.Configuration.AddTecVaultAzureKeyVault(
 | `AllowInboundBaggage` | `false` | Mantém e repassa o `baggage` recebido; só para tráfego exclusivamente interno |
 | `BaggageAllowedHosts` | vazio | Hosts que recebem `baggage` nas chamadas de saída: nome exato, `*.sufixo` ou `*` ([correlation-id.md](correlation-id.md)) |
 | `RedactAllLoggerProviders` | `false` | Redige mensagem formatada e exceção também nos provedores de log fora do OpenTelemetry (console, Debug, EventLog); lida no `AddTecObservability` ([redacao.md](redacao.md#-uso)) |
+| `AdditionalSensitiveKeys` | vazio | Nomes de atributo sensíveis próprios do serviço, casados como os embutidos (fim do nome, sem maiúsculas, acentos e separadores); letras, dígitos e separadores, 3 a 128 caracteres, até 64 nomes ([redacao.md](redacao.md#nomes-próprios-do-serviço)) |
+| `SecretStoreHosts` | vazio | Hosts de cofres próprios (HashiCorp Vault, Infisical...): nome exato ou `*.sufixo` (sem `*` sozinho), até 64. Chamadas a eles não geram span e os caminhos saem redigidos ([redacao.md](redacao.md#-cofres-de-segredos)) |
+| `IncludeScopes` | `false` | Exporta os escopos de log como atributos redigidos, só com as chaves de `AllowedScopeKeys`; lida no `AddTecObservability` ([redacao.md](redacao.md#-escopos-de-log)) |
+| `AllowedScopeKeys` | vazio | Chaves de escopo exportadas (`*` = todas); o `correlation.id` sempre entra; até 64 chaves |
 | `Otlp` | — | `OtlpExporterSettings` ([OTLP](exportadores.md#-otlp)) |
 | `LogFile` | — | `LogFileExporterSettings` ([arquivo de logs](exportadores.md#-arquivo-de-logs-logfile)) |
 | `HealthChecks` | — | `ObservabilityHealthChecksOptions` ([health checks](health-checks.md#️-opções)) |
@@ -227,21 +236,22 @@ problemas juntos):
 | Mensagens de `Otlp:*`, `LogFile:*`, `HealthChecks:*` e `Azure:*` | Veja [exportadores](exportadores.md#-erros) e [health checks](health-checks.md#-erros) |
 
 > [!NOTE]
-> As mensagens de validação nunca repetem o valor recebido (endpoint com credencial, cabeçalho, nome de arquivo): um
-> teste de vazamento garante isso.
+> As mensagens de validação não repetem o valor recebido de endpoint com credencial, cabeçalho ou nome de arquivo: um
+> teste de vazamento garante isso. A exceção é o nome de um `Provider` inválido, que a mensagem cita.
 
 ---
 
 ## 🌐 Estado global do processo
 
 O OpenTelemetry e o .NET têm pontos de configuração que valem para o **processo inteiro**. O componente evita estado
-estático, mas três casos são inevitáveis:
+estático, mas estes casos são inevitáveis:
 
 | Estado | Por quê | Consequência |
 |---|---|---|
 | Propagadores (`Propagators.DefaultTextMapPropagator` e `DistributedContextPropagator.Current`) | São globais no OpenTelemetry e no .NET; o filtro de Baggage por host é instalado neles uma vez | Vale para todos os hosts e `HttpClient`s do processo; um `SocketsHttpHandler` criado **antes** da instalação guarda o propagador anterior |
 | `BaggageHostPolicy.Default` (política de `BaggageAllowedHosts` fora de uma requisição) | Os propagadores globais precisam de uma política para chamadas feitas fora do middleware (serviços em segundo plano) | Com **dois hosts no mesmo processo**, o último a subir define a política padrão; dentro de uma requisição vale sempre a do host que a atende |
 | Instrumentação ASP.NET Core/HttpClient | Assina eventos do processo inteiro | Dois hosts no mesmo processo veem os spans um do outro (relevante em testes) |
+| `AdditionalSensitiveKeys` e `SecretStoreHosts` | A redação de texto e o filtro de saída do `HttpClient` são estáticos (rodam em processadores e propagadores sem acesso ao container) | As listas **só somam**: com vários hosts ou a cada recarga da configuração vale a união. Esconder a mais é o lado seguro; remover um item exige reiniciar o processo |
 
 > [!WARNING]
 > Num processo com **um** host (o caso normal) nada disso aparece. Em testes com vários hosts simultâneos, use a mesma

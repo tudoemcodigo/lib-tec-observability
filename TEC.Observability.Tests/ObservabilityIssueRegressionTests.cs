@@ -69,15 +69,28 @@ public class ObservabilityIssueRegressionTests
     [Test]
     public async Task Issue3_LogRedactionProcessor_Redacts_Body_And_OriginalFormat()
     {
-        using var factory = LoggerFactory.Create(builder =>
+        // Segredo no próprio modelo da mensagem (concatenado por engano): o modelo vai para {OriginalFormat} e para o Body, que os
+        // exportadores gravam além da mensagem formatada.
+        const string Secret = "S3gredoNoModelo";
+        var exported = new List<LogRecord>();
+        using (var factory = LoggerFactory.Create(builder => builder.AddOpenTelemetry(options =>
         {
-            builder.AddOpenTelemetry(options =>
-            {
-                options.AddProcessor(new LogRedactionProcessor());
-            });
-        });
+            options.IncludeFormattedMessage = true;
+            options.AddProcessor(new LogRedactionProcessor());
+            options.AddInMemoryExporter(exported);
+        })))
+        {
+#pragma warning disable CA2254 // modelo com segredo é o que está sendo testado
+            factory.CreateLogger("Issue3").LogInformation("Conexão Password=" + Secret + "; pedido {Pedido}", 42);
+#pragma warning restore CA2254
+        }
 
-        var processor = new LogRedactionProcessor();
-        await Assert.That(processor).IsNotNull();
+        var record = exported.ToArray().OfType<LogRecord>().Single();
+        var template = record.Attributes!.Single(a => a.Key == LogRedactionProcessor.OriginalFormatAttribute).Value as string;
+
+        await Assert.That(template).IsEqualTo("Conexão Password=Redacted; pedido {Pedido}");
+        await Assert.That(record.Body).IsEqualTo("Conexão Password=Redacted; pedido {Pedido}");
+        await Assert.That(record.FormattedMessage).IsEqualTo("Conexão Password=Redacted; pedido 42");
+        await Assert.That(record.Attributes!.Single(a => a.Key == "Pedido").Value).IsEqualTo(42).Because("valor não sensível segue como veio");
     }
 }

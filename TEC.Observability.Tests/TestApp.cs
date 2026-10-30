@@ -128,10 +128,13 @@ internal sealed class RawHttpServer : IAsyncDisposable
     private readonly System.Net.Sockets.TcpListener _listener = new(IPAddress.Loopback, 0);
     private readonly CancellationTokenSource _stop = new();
     private readonly List<string> _requests = [];
+    private readonly Func<string, string> _respond;
     private readonly Task _loop;
 
-    public RawHttpServer()
+    /// <param name="respond">Resposta HTTP bruta para os cabeçalhos recebidos (ex.: um 302); sem ela, 200 vazio.</param>
+    public RawHttpServer(Func<string, string>? respond = null)
     {
+        _respond = respond ?? (_ => "HTTP/1.1 200 OK\r\nContent-Length: 0\r\nConnection: close\r\n\r\n");
         _listener.Start();
         _loop = AcceptAsync();
     }
@@ -166,9 +169,10 @@ internal sealed class RawHttpServer : IAsyncDisposable
                     text.Append(System.Text.Encoding.ASCII.GetString(buffer, 0, read));
                 }
 
+                var received = text.ToString();
                 lock (_requests)
-                    _requests.Add(text.ToString());
-                await stream.WriteAsync("HTTP/1.1 200 OK\r\nContent-Length: 0\r\nConnection: close\r\n\r\n"u8.ToArray(), _stop.Token);
+                    _requests.Add(received);
+                await stream.WriteAsync(System.Text.Encoding.ASCII.GetBytes(_respond(received)), _stop.Token);
             }
         }
         catch (OperationCanceledException)

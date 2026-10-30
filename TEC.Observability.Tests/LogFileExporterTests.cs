@@ -49,8 +49,10 @@ public class LogFileExporterTests
         var services = new ServiceCollection();
         services.AddLogging(logging => logging.SetMinimumLevel(LogLevel.Trace));
         services.AddSingleton(time ?? new ManualTime(Today));
+        // Escopos exportados só com IncludeScopes e a chave na lista (o arquivo mostra os escopos exportados).
         var builder = services.AddTecObservability(TestApp.Configuration(
-            [("Provider", "LogFile"), ("ServiceName", "pedidos-api"), ("LogFile:FolderPath", directory.FullPath), .. settings]));
+            [("Provider", "LogFile"), ("ServiceName", "pedidos-api"), ("LogFile:FolderPath", directory.FullPath),
+                ("IncludeScopes", "true"), ("AllowedScopeKeys:0", "CorrelationId"), .. settings]));
         observability?.Invoke(builder);
         return services.BuildServiceProvider();
     }
@@ -213,6 +215,112 @@ public class LogFileExporterTests
 
         await Assert.That(exporter.IsOwnFile(fileName)).IsEqualTo(own);
     }
+
+    // ---------- Várias instâncias na mesma pasta ----------
+
+    [Test]
+    [Arguments("pedidos-api.pod-a.txt", true)]
+    [Arguments("pedidos-api.pod-a-20261005.txt", true)]
+    [Arguments("pedidos-api.pod-a-20261005_002.txt", true)]
+    [Arguments("pedidos-api-20261005.txt", false)]
+    [Arguments("pedidos-api.pod-b-20261005.txt", false)]
+    [Arguments("pedidos-api.pod-ab-20261005.txt", false)]
+    [Arguments("pedidos-api.pod-a.old-20261005.txt", false)]
+    public async Task Instance_retention_only_considers_files_of_the_same_instance(string fileName, bool own)
+    {
+        var exporter = new LogFileRecordExporter(new LogFileExporterSettings { InstanceName = "pod-a" }, "pedidos-api", TimeProvider.System);
+
+        await Assert.That(exporter.IsOwnFile(fileName)).IsEqualTo(own);
+    }
+
+    [Test]
+    public async Task File_without_instance_does_not_consider_instance_files_its_own()
+    {
+        var exporter = new LogFileRecordExporter(new LogFileExporterSettings(), "pedidos-api", TimeProvider.System);
+
+        await Assert.That(exporter.IsOwnFile("pedidos-api.pod-a-20261005.txt")).IsFalse();
+    }
+
+    [Test]
+    public async Task Instances_sharing_a_folder_write_own_files_and_retention_keeps_the_other_instance()
+    {
+        using var directory = new TempDirectory();
+        Directory.CreateDirectory(directory.FullPath);
+        // Arquivos antigos da outra instância e da própria: só os da própria entram na retenção.
+        string[] existing = ["pedidos-api.pod-b-20261001.txt", "pedidos-api.pod-b-20261002.txt", "pedidos-api.pod-a-20261001.txt", "pedidos-api.pod-a-20261002.txt"];
+        for (var i = 0; i < existing.Length; i++)
+        {
+            var path = Path.Combine(directory.FullPath, existing[i]);
+            File.WriteAllText(path, "antigo");
+            File.SetLastWriteTimeUtc(path, Today.UtcDateTime.AddDays(-10 + i));
+        }
+
+        await using (var provider = Build(directory, settings: [("LogFile:InstanceName", "pod-a"), ("LogFile:RetainedFileCount", "1")]))
+            provider.GetRequiredService<ILoggerFactory>().CreateLogger("Teste").LogInformation("novo");
+
+        await Assert.That(directory.Files())
+            .IsEquivalentTo(["pedidos-api.pod-a-20261005.txt", "pedidos-api.pod-b-20261001.txt", "pedidos-api.pod-b-20261002.txt"]);
+        await Assert.That(directory.Read("pedidos-api.pod-a-20261005.txt")).Contains("[INF] Teste: novo");
+    }
+
+    [Test]
+    [Arguments("../fora")]
+    [Arguments("pod a")]
+    [Arguments("pod.a")]
+    [Arguments("pod*")]
+    public async Task Invalid_instance_name_is_rejected(string instance)
+    {
+        using var directory = new TempDirectory();
+        await using var provider = Build(directory, settings: ("LogFile:InstanceName", instance));
+
+        await Assert.That(() => provider.GetRequiredService<IOptions<ObservabilityOptions>>().Value).Throws<OptionsValidationException>();
+    }
+
+    // ---------- Escopos no arquivo ----------
+
+    [Test]
+    public async Task Scopes_are_not_written_without_IncludeScopes()
+    {
+        using var directory = new TempDirectory();
+        await using (var provider = Build(directory, settings: ("IncludeScopes", "false")))
+        {
+            var logger = provider.GetRequiredService<ILoggerFactory>().CreateLogger("Teste");
+            using (logger.BeginScope(new Dictionary<string, object> { ["CorrelationId"] = "c-sem-escopo" }))
+                logger.LogInformation("Pedido {Id} criado", 7);
+        }
+
+        var content = directory.Read("pedidos-api-20261005.txt");
+        await Assert.That(content).Contains("Pedido 7 criado");
+        await Assert.That(content).DoesNotContain("c-sem-escopo");
+        await Assert.That(content).DoesNotContain("Id=7").Because("atributo do modelo da mensagem não se repete como escopo");
+    }
+
+    [Test]
+    public async Task Scope_keys_outside_the_list_are_not_written()
+    {
+        using var directory = new TempDirectory();
+        await using (var provider = Build(directory))
+        {
+            var logger = provider.GetRequiredService<ILoggerFactory>().CreateLogger("Teste");
+            using (logger.BeginScope(new Dictionary<string, object> { ["CorrelationId"] = "c-9", ["Cpf"] = "12345678900", ["Rota"] = "/x" }))
+                logger.LogInformation("ok");
+        }
+
+        var content = directory.Read("pedidos-api-20261005.txt");
+        await Assert.That(content).Contains("| CorrelationId=c-9");
+        await Assert.That(content).DoesNotContain("12345678900");
+        await Assert.That(content).DoesNotContain("Rota=");
+    }
+
+    [Test]
+    [Arguments("{Id}", "Id", true)]
+    [Arguments("Pedido {Id,5} criado", "Id", true)]
+    [Arguments("Pedido {Id:D3}", "Id", true)]
+    [Arguments("Pedido {IdCliente}", "Id", false)]
+    [Arguments("Pedido Id", "Id", false)]
+    [Arguments(null, "Id", false)]
+    public async Task Template_arguments_are_recognized(string? template, string key, bool argument) =>
+        await Assert.That(LogFileRecordExporter.IsTemplateArgument(template, key)).IsEqualTo(argument);
 
     [Test]
     [Arguments("pedidos/api", "pedidos_api")]

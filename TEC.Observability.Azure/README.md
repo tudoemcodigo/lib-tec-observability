@@ -67,4 +67,4 @@ registro. Com `UseManagedIdentity`, a identidade precisa do papel **Monitoring M
 - [Segurança](https://github.com/tudoemcodigo/lib-tec-observability/blob/main/docs/seguranca.md)
 - [Changelog](https://github.com/tudoemcodigo/lib-tec-observability/blob/main/CHANGELOG.md)
 
-Licença [MIT](https://github.com/tudoemcodigo/lib-tec-observability/blob/main/LICENSE).
+Licença [Apache 2.0](https://github.com/tudoemcodigo/lib-tec-observability/blob/main/LICENSE).

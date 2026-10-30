@@ -70,15 +70,11 @@ public static class ApplicationBuilderExtensions
 
     private static void Map(IEndpointRouteBuilder endpoints, string pattern, string tag, ObservabilityHealthChecksOptions options)
     {
-        // Só GET, fora das métricas HTTP (as sondas distorceriam latência e volume do serviço). O ASP.NET Core 8 não permite tirar
-        // um endpoint das métricas (DisableHttpMetrics é do .NET 9): no .NET 8 as sondas entram em http.server.request.duration,
-        // identificáveis pelo atributo http.route.
+        // Só GET, fora das métricas HTTP (as sondas distorceriam latência e volume do serviço).
         var managementPort = options.ManagementPort;
         var endpoint = endpoints.MapGet(pattern, context => WriteReportAsync(context, tag, managementPort))
             .AllowAnonymous()
-#if NET9_0_OR_GREATER
             .DisableHttpMetrics()
-#endif
             .ExcludeFromDescription();
 
         // Só roteamento: o cabeçalho Host é escolhido pelo cliente. A restrição de verdade é a ManagementPort, conferida na conexão.

@@ -6,10 +6,10 @@
 
 **Deixa cada serviço observável do mesmo jeito: rastreia as requisições, coleta métricas e logs, correlaciona chamadas entre serviços e informa a saúde do serviço e das dependências, com o destino da telemetria escolhido só por configuração.**
 
-OpenTelemetry · OTLP, Azure Monitor, console ou arquivo · Exportadores plugáveis · Liveness e readiness em JSON · Correlation ID · Redação de dados sensíveis · .NET 8 e 10 · Native AOT
+OpenTelemetry · OTLP, Azure Monitor, console ou arquivo · Exportadores plugáveis · Liveness e readiness em JSON · Correlation ID · Redação de dados sensíveis · .NET 10 · Native AOT
 
 [![CI](https://github.com/tudoemcodigo/lib-tec-observability/actions/workflows/ci.yml/badge.svg)](https://github.com/tudoemcodigo/lib-tec-observability/actions/workflows/ci.yml)
-[![.NET](https://img.shields.io/badge/.NET-8.0%20%7C%2010.0-512BD4?logo=dotnet&logoColor=white)](#-compatibilidade)
+[![.NET](https://img.shields.io/badge/.NET-10.0-512BD4?logo=dotnet&logoColor=white)](#-compatibilidade)
 [![Native AOT](https://img.shields.io/badge/Native%20AOT-pacote%20base-512BD4)](#-compatibilidade)
 [![Versão](https://img.shields.io/badge/vers%C3%A3o-0.0.1-blue)](CHANGELOG.md)
 [![Licença: Apache 2.0](https://img.shields.io/badge/licen%C3%A7a-Apache%202.0-blue)](LICENSE)
@@ -111,7 +111,7 @@ dotnet add package TEC.Observability.Azure --version 0.0.1   # só se algum ambi
 ```
 
 > [!IMPORTANT]
-> Versão atual: **0.0.1** (ainda não publicada). Para evitar *dependency confusion*, mapeie `TEC.*` só para a origem
+> Versão atual: **0.0.1**. Para evitar *dependency confusion*, mapeie `TEC.*` só para a origem
 > `tec-interno` no `nuget.config` da aplicação (`packageSourceMapping`).
 
 ## 🚀 Início rápido
@@ -215,16 +215,12 @@ flowchart LR
 
 | Item | Suporte |
 |---|---|
-| .NET | `net8.0` e `net10.0` (LTS); a aplicação é ASP.NET Core (`Microsoft.AspNetCore.App`) |
+| .NET | `net10.0` (LTS); a aplicação é ASP.NET Core (`Microsoft.AspNetCore.App`) |
 | Native AOT / trimming | ✅ `TEC.Observability` (`IsAotCompatible`, binding de configuração gerado em compilação, JSON com `Utf8JsonWriter`) · ❌ `TEC.Observability.Azure` (a distro `Azure.Monitor.OpenTelemetry.AspNetCore` gera IL2026/IL3050) |
 | Sem ICU (`InvariantGlobalization`) | ✅ testado no CI |
 | Backends | Qualquer coletor OTLP (gRPC ou HTTP/protobuf), Azure Monitor, console, arquivo local ou exportador próprio |
 | .NET Aspire | Convive com o `ServiceDefaults` ([aspire.md](docs/aspire.md)) |
 | Sistemas | Windows, Linux e macOS |
-
-> [!NOTE]
-> No .NET 8, as sondas de health entram na métrica `http.server.request.duration` (identificáveis por `http.route`):
-> `DisableHttpMetrics` só existe a partir do .NET 9.
 
 ## 🛡️ Segurança
 
@@ -235,9 +231,8 @@ redirecionamento nem cabeçalhos de trace e arquivo de log com caracteres de con
 
 > [!WARNING]
 > A redação é uma **heurística que prefere esconder a vazar**: pode redigir demais (ex.: `token: expirado` vira
-> `token: Redacted`) e não cobre escopos de log (`BeginScope`) nos exportadores OTLP/Azure/Console nem eventos de span
-> (`RecordException`). Não registre segredos de
-> propósito. Detalhes em [🧹 Redação](docs/redacao.md) e [🛡️ Segurança](docs/seguranca.md).
+> `token: Redacted`) e não cobre eventos de span (`RecordException`). Escopos de log (`BeginScope`) só saem com
+> `IncludeScopes` ligado, pelas chaves de `AllowedScopeKeys` e já redigidos. Não registre segredos de propósito. Detalhes em [🧹 Redação](docs/redacao.md) e [🛡️ Segurança](docs/seguranca.md).
 > Vulnerabilidades: não abra *issue* pública; escreva para [roberto@roberto.inf.br](mailto:roberto@roberto.inf.br).
 
 ## 🧪 Testes
@@ -248,7 +243,7 @@ dotnet test --project TEC.Observability.Azure.Tests -c Release --treenode-filter
 dotnet test --project TEC.Observability.LoadTests -c Release --treenode-filter "/*/*/*/*[Category=Carga-CI]"      # carga rápida
 ```
 
-371 testes no `TEC.Observability.Tests` (em `net10.0`, `net8.0` e sem ICU: regressão, segurança, fuzzing, DoS e
+499 testes no `TEC.Observability.Tests` (em `net10.0` e sem ICU: regressão, segurança, fuzzing, DoS e
 vazamento), 29 unitários e 3 de integração (Application Insights real) no `TEC.Observability.Azure.Tests`, 5 de carga
 rápida (`Carga-CI`) e as suítes pesadas (`Carga-Pesada` e 1 `Seguranca-Pesada`, o fuzzing estendido), estas de carga só
 sob demanda no `performance.yml` manual. Detalhes em [docs/testes.md](docs/testes.md).

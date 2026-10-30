@@ -21,8 +21,9 @@ Correlacionar chamadas entre serviços exige um identificador que atravesse a ca
 
 ## Decisão
 1. **Validação estrita.** O correlation id é aceito só com até 128 caracteres: letras e dígitos ASCII, `-`, `_`, `.` e `:`.
-   Inválido é descartado sem erro. Ordem de resolução: cabeçalho `X-Correlation-ID`, Baggage `correlation.id` do chamador,
-   TraceId do `Activity` e, sem `Activity`, um GUID
+   Inválido é descartado sem erro. Ordem de resolução: cabeçalho `X-Correlation-ID`, Baggage `correlation.id` do chamador
+   (o do OpenTelemetry e, sem ele, o do `Activity` da requisição: com `Provider: None` não há instrumentação do
+   OpenTelemetry para preencher o primeiro), TraceId do `Activity` e, sem `Activity`, um GUID
    ([`CorrelationIdMiddleware.cs`](../../TEC.Observability/Tracing/CorrelationIdMiddleware.cs)).
 2. **Ligado ao trace.** O valor vira atributo do span (`correlation.id`), escopo de log, cabeçalho de resposta e item de
    Baggage (do OpenTelemetry e do `Activity`), sem alocar dicionário por requisição.
@@ -34,6 +35,10 @@ Correlacionar chamadas entre serviços exige um identificador que atravesse a ca
 5. **Filtro nos dois propagadores.** `HostFilteringPropagator` e `HostFilteringDistributedContextPropagator` envolvem os
    propagadores padrão do OpenTelemetry e do .NET e deixam de escrever `baggage` (e `Correlation-Context`) para hosts fora
    da política da requisição atual ([`BaggagePropagation.cs`](../../TEC.Observability/Tracing/BaggagePropagation.cs)).
+   Para esses hosts, também apagam o `baggage`/`Correlation-Context` que já estava na requisição: num redirecionamento
+   automático o `HttpClient` reaproveita a mesma mensagem, e o `DiagnosticsHandler` do .NET 10, que fica dentro do
+   tratamento de redirecionamento, chama o propagador a cada salto com a URL nova. Um `DelegatingHandler` não serviria (vê
+   só a primeira URL).
 6. **Propagação mesmo sem exportar.** Com `Provider: None`, um `ContextPropagationListener` mínimo escuta só
    `Microsoft.AspNetCore` e `System.Net.Http` com `PropagationData` (cria `Activity` sem gravar nem exportar)
    ([`ContextPropagationListener.cs`](../../TEC.Observability/Tracing/ContextPropagationListener.cs)).
@@ -53,3 +58,6 @@ Detalhes em [correlation-id.md](../correlation-id.md).
 - O correlation id do cliente é sempre confiado em formato (nunca em conteúdo): um cliente pode reutilizar o id de outra
   requisição (achado S-04, Info, não corrigido).
 - `BaggageAllowedHosts: ["*"]` anula a proteção e não deve ser usado em serviços que chamam terceiros.
+- Um `baggage` posto à mão pela aplicação também é apagado para hosts fora da lista: a política vale para o cabeçalho, não
+  só para o que a biblioteca escreve. Um handler primário próprio que siga redirecionamentos fora do `SocketsHttpHandler`
+  não é coberto.

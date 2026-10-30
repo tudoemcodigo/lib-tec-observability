@@ -106,7 +106,17 @@ internal sealed class LogFileRecordExporter : BaseExporter<LogRecord>
         _settings = settings;
         _time = time;
         _directory = Path.GetFullPath(settings.FolderPath, AppContext.BaseDirectory);
-        _baseName = SafeFileName(string.IsNullOrWhiteSpace(settings.FileName) ? serviceName : settings.FileName);
+        _baseName = BaseName(settings, serviceName);
+    }
+
+    /// <summary>
+    /// Início do nome dos arquivos: <c>{FileName ou ServiceName}</c> ou, com instância, <c>{nome}.{InstanceName}</c>. O ponto separa
+    /// a instância de um jeito que a retenção de um nome sem instância (<c>pedidos-api-...</c>) não reconhece como seu, e vice-versa.
+    /// </summary>
+    internal static string BaseName(LogFileExporterSettings settings, string serviceName)
+    {
+        var name = SafeFileName(string.IsNullOrWhiteSpace(settings.FileName) ? serviceName : settings.FileName);
+        return string.IsNullOrWhiteSpace(settings.InstanceName) ? name : $"{name}.{SafeFileName(settings.InstanceName)}";
     }
 
     /// <summary>Arquivo em uso (o último gravado), ou <c>null</c> antes da primeira gravação.</summary>
@@ -297,7 +307,8 @@ internal sealed class LogFileRecordExporter : BaseExporter<LogRecord>
 
     /// <summary>
     /// <c>{base}.txt</c>, <c>{base}_NNN.txt</c>, <c>{base}-{dígitos}.txt</c> ou <c>{base}-{dígitos}_NNN.txt</c>: evita apagar arquivos de
-    /// outro serviço cujo nome só começa igual (<c>pedidos</c> e <c>pedidos-api</c>).
+    /// outro serviço cujo nome só começa igual (<c>pedidos</c> e <c>pedidos-api</c>) e de outra instância na mesma pasta
+    /// (<c>pedidos-api.pod-a-...</c> não é de <c>pedidos-api</c> nem de <c>pedidos-api.pod-b</c>).
     /// </summary>
     internal bool IsOwnFile(string fileName)
     {
@@ -349,10 +360,10 @@ internal sealed class LogFileRecordExporter : BaseExporter<LogRecord>
         if (record.TraceId != default)
             _buffer.Append(" | trace_id=").Append(record.TraceId.ToHexString()).Append(" span_id=").Append(record.SpanId.ToHexString());
 
-        if (_settings.IncludeScopes)
+        if (_settings.IncludeScopes && record.Attributes is { Count: > 0 } attributes)
         {
             _scopeSeparator = " | ";
-            record.ForEachScope(static (scope, exporter) => exporter.AppendScope(scope), this);
+            AppendScope(ExtraAttributes(attributes));
         }
 
         if (lineBreak >= 0)
@@ -373,10 +384,49 @@ internal sealed class LogFileRecordExporter : BaseExporter<LogRecord>
     }
 
     /// <summary>
-    /// Itens do escopo como <c>chave=valor</c> (escopos de texto simples, só o valor). Os escopos não passam pelo processador de
-    /// redação (não podem ser reescritos no registro): a redação dos valores é feita aqui.
+    /// Atributos que não estão no modelo da mensagem: os escopos exportados (que o processador de redação acrescenta, só com as
+    /// chaves de <c>Observability:AllowedScopeKeys</c>) e, num log sem modelo, os atributos do próprio estado. Os escopos do
+    /// OpenTelemetry (<c>LogRecord.ForEachScope</c>) não são lidos: chegariam sem a lista de chaves.
     /// </summary>
-    private void AppendScope(LogRecordScope scope)
+    private static IEnumerable<KeyValuePair<string, object?>> ExtraAttributes(IReadOnlyList<KeyValuePair<string, object?>> attributes)
+    {
+        string? template = null;
+        foreach (var (key, value) in attributes)
+        {
+            if (key == "{OriginalFormat}")
+                template = value as string;
+        }
+
+        foreach (var attribute in attributes)
+        {
+            if (attribute.Key != "{OriginalFormat}" && !IsTemplateArgument(template, attribute.Key))
+                yield return attribute;
+        }
+    }
+
+    /// <summary><c>true</c> quando o modelo tem o buraco <c>{chave}</c>, <c>{chave,alinhamento}</c> ou <c>{chave:formato}</c>.</summary>
+    internal static bool IsTemplateArgument(string? template, string key)
+    {
+        if (template is null || key.Length == 0)
+            return false;
+
+        var index = 0;
+        while ((index = template.IndexOf(key, index, StringComparison.Ordinal)) >= 0)
+        {
+            var end = index + key.Length;
+            if (index > 0 && template[index - 1] == '{' && end < template.Length && template[end] is '}' or ',' or ':')
+                return true;
+            index = end;
+        }
+
+        return false;
+    }
+
+    /// <summary>
+    /// Itens como <c>chave=valor</c>. Os valores já passaram pelo processador de redação; a redação é repetida aqui como defesa
+    /// em profundidade (o arquivo pode ser lido fora do backend de telemetria).
+    /// </summary>
+    private void AppendScope(IEnumerable<KeyValuePair<string, object?>> scope)
     {
         try
         {

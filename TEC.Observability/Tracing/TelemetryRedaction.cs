@@ -1,6 +1,7 @@
 using System.Diagnostics;
 using Microsoft.AspNetCore.Http;
 using OpenTelemetry;
+using TEC.Observability.Internal;
 
 namespace TEC.Observability.Tracing;
 
@@ -14,13 +15,14 @@ namespace TEC.Observability.Tracing;
 /// pelas chaves <c>OTEL_DOTNET_EXPERIMENTAL_ASPNETCORE_DISABLE_URL_QUERY_REDACTION</c> e
 /// <c>OTEL_DOTNET_EXPERIMENTAL_HTTPCLIENT_DISABLE_URL_QUERY_REDACTION</c> da configuração. A distro do Azure Monitor
 /// (<c>UseAzureMonitor</c>) grava <c>true</c> nas duas, na própria <c>IConfiguration</c> da aplicação, quando elas não estão
-/// definidas: com <c>Provider: Azure</c> a query string das requisições de entrada (e, no .NET 8, a das chamadas de saída) ia
-/// sem redação para o Application Insights. Os enriquecedores daqui rodam depois que a instrumentação grava as tags e
-/// devolvem o formato redigido, compostos com os enriquecedores do serviço.
+/// definidas: com <c>Provider: Azure</c> a query string das requisições de entrada ia sem redação para o Application Insights.
+/// Os enriquecedores daqui rodam depois que a instrumentação grava as tags e devolvem o formato redigido, compostos com os
+/// enriquecedores do serviço.
 /// </para>
 /// <para>
-/// Chamadas a cofres de segredos do Azure (Key Vault, Managed HSM) trazem o nome e a versão do segredo no caminho
-/// (<c>/secrets/nome/versão</c>): <see cref="SpanRedactionProcessor"/> reescreve o caminho desses spans mantendo duração e status.
+/// Chamadas a cofres de segredos trazem o nome e a versão do segredo no caminho (<c>/secrets/nome/versão</c>):
+/// <see cref="SpanRedactionProcessor"/> reescreve o caminho desses spans mantendo duração e status. O cofre é reconhecido pelo
+/// host: os de nuvem pelo nome, os próprios (HashiCorp Vault, Infisical...) pela opção <c>SecretStoreHosts</c>.
 /// </para>
 /// </remarks>
 internal static class TelemetryRedaction
@@ -95,10 +97,9 @@ internal static class TelemetryRedaction
     }
 
     /// <summary>
-    /// Enriquecedor dos spans de saída do <c>HttpClient</c>: no .NET 8 a instrumentação grava <c>url.full</c> sem redação quando
-    /// ela está desligada (com a URL original ou, se a URL tinha usuário e senha, só sem eles); aqui o próprio valor gravado volta
-    /// ao formato redigido, sem credenciais nem fragmento. Valor já redigido (<c>?*</c> do .NET 9 ou superior, <c>?a=Redacted</c>)
-    /// não muda.
+    /// Enriquecedor dos spans de saída do <c>HttpClient</c>: se a instrumentação gravou <c>url.full</c> sem redação (com a redação
+    /// desligada pela configuração ou por outra biblioteca), o próprio valor gravado volta ao formato redigido, sem credenciais nem
+    /// fragmento. Valor já redigido (<c>?*</c> do .NET, <c>?a=Redacted</c>) não muda.
     /// </summary>
     internal static void RedactClientUrl(Activity activity) => RedactUrlTag(activity, UrlFull);
 
@@ -121,9 +122,53 @@ internal static class TelemetryRedaction
             : value;
     }
 
-    /// <summary><c>true</c> para hosts de cofres de segredos (Azure Key Vault, AWS Secrets Manager, GCP Secret Manager).</summary>
-    internal static bool IsSecretStoreHost(Uri? uri) => uri is { IsAbsoluteUri: true } && (IsSecretStoreHost(uri.IdnHost) || IsSecretStoreRequest(uri));
+    /// <summary>Teto de padrões de host de cofre no processo (a lista é unida a cada recarga da configuração).</summary>
+    internal const int MaxSecretStoreHosts = 256;
 
+    private static readonly Lock SecretStoreLock = new();
+    private static readonly List<string> SecretStorePatterns = [];
+
+    /// <summary>Hosts de cofres próprios (<c>Observability:SecretStoreHosts</c>), trocados por cópia: a leitura não usa lock.</summary>
+    private static volatile HostPatterns _secretStoreHosts = new([]);
+
+    /// <summary>
+    /// Acrescenta hosts de cofres próprios (<c>Observability:SecretStoreHosts</c>: nome exato ou <c>*.sufixo</c>). Vale para o
+    /// processo inteiro (o filtro de saída do <c>HttpClient</c> e o processador de spans são estáticos) e só soma: com vários hosts
+    /// no mesmo processo, ou a cada recarga, vale a união — esconder a mais é o lado seguro. Padrões inválidos (recusados na
+    /// validação da subida) e <c>*</c> são ignorados aqui.
+    /// </summary>
+    internal static void RegisterSecretStoreHosts(IEnumerable<string?>? patterns)
+    {
+        if (patterns is null)
+            return;
+
+        lock (SecretStoreLock)
+        {
+            var changed = false;
+            foreach (var raw in patterns)
+            {
+                var pattern = raw?.Trim();
+                if (pattern is null or "*" || !Configuration.ObservabilityOptionsValidator.IsHostPattern(pattern)
+                    || SecretStorePatterns.Contains(pattern, StringComparer.OrdinalIgnoreCase))
+                {
+                    continue;
+                }
+
+                if (SecretStorePatterns.Count >= MaxSecretStoreHosts)
+                    break;
+                SecretStorePatterns.Add(pattern);
+                changed = true;
+            }
+
+            if (changed)
+                _secretStoreHosts = new HostPatterns(SecretStorePatterns);
+        }
+    }
+
+    /// <summary>
+    /// <c>true</c> para hosts de cofres de segredos: os de nuvem, reconhecidos pelo nome (Azure Key Vault e Managed HSM, AWS
+    /// Secrets Manager, GCP Secret Manager), e os configurados em <c>Observability:SecretStoreHosts</c>.
+    /// </summary>
     internal static bool IsSecretStoreHost(string? host)
     {
         if (string.IsNullOrEmpty(host))
@@ -141,24 +186,17 @@ internal static class TelemetryRedaction
             return true;
         }
 
-        return false;
+        return _secretStoreHosts.Matches(host);
     }
 
-    /// <summary><c>true</c> quando a requisição é direcionada a um cofre de segredos em nuvem ou dedicado (Azure, AWS, GCP, HashiCorp, Infisical).</summary>
-    internal static bool IsSecretStoreRequest(Uri? uri)
-    {
-        if (uri is null || !uri.IsAbsoluteUri)
-            return false;
+    /// <summary>
+    /// <c>true</c> quando a requisição vai a um cofre de segredos (<see cref="IsSecretStoreHost(string?)"/>). Só o host decide: o
+    /// caminho sozinho (<c>/v1/secret</c>, <c>/api/v1/secrets</c>) não basta, porque APIs de terceiros usam os mesmos caminhos.
+    /// </summary>
+    internal static bool IsSecretStoreRequest(Uri? uri) => uri is { IsAbsoluteUri: true } && IsSecretStoreHost(uri.IdnHost);
 
-        if (IsSecretStoreHost(uri.IdnHost))
-            return true;
-
-        var path = uri.AbsolutePath;
-        return path.StartsWith("/v1/secret", StringComparison.OrdinalIgnoreCase)
-            || path.StartsWith("/v1/sys", StringComparison.OrdinalIgnoreCase)
-            || path.StartsWith("/api/v1/secrets", StringComparison.OrdinalIgnoreCase)
-            || path.StartsWith("/api/v2/secrets", StringComparison.OrdinalIgnoreCase);
-    }
+    /// <summary><c>true</c> quando há hosts de cofre configurados (as URLs não podem ser descartadas pela conferência barata).</summary>
+    internal static bool HasConfiguredSecretStoreHosts => !_secretStoreHosts.IsEmpty;
 
     /// <summary>
     /// Caminho de um recurso de cofre sem o nome e a versão: mantém só o prefixo ou tipo de recurso.
@@ -300,7 +338,7 @@ internal sealed class SpanRedactionProcessor : BaseProcessor<Activity>
             activity.SetTag(TelemetryRedaction.UrlQuery, null);
     }
 
-    /// <summary>URL de saída que não é de cofre: só query string, credenciais e fragmento saem (instrumentações de terceiros, .NET 8).</summary>
+    /// <summary>URL de saída que não é de cofre: só query string, credenciais e fragmento saem (instrumentações de terceiros).</summary>
     private static void RedactOrdinaryUrls(Activity activity, string? full, string? legacy)
     {
         if (full is not null)
@@ -364,14 +402,13 @@ internal sealed class SpanRedactionProcessor : BaseProcessor<Activity>
         if (value is null)
             return false;
 
-        // Só URLs candidatas a cofre chegam ao parse: a conferência barata evita custo nos demais spans de saída.
-        if (value.IndexOf(".vault.", StringComparison.OrdinalIgnoreCase) < 0
+        // Só URLs candidatas a cofre chegam ao parse: a conferência barata evita custo nos demais spans de saída. Com hosts de
+        // cofre configurados (SecretStoreHosts), qualquer URL é candidata.
+        if (!TelemetryRedaction.HasConfiguredSecretStoreHosts
+            && value.IndexOf(".vault.", StringComparison.OrdinalIgnoreCase) < 0
             && value.IndexOf(".managedhsm.", StringComparison.OrdinalIgnoreCase) < 0
             && value.IndexOf("secretmanager", StringComparison.OrdinalIgnoreCase) < 0
-            && value.IndexOf("secretsmanager", StringComparison.OrdinalIgnoreCase) < 0
-            && value.IndexOf("/v1/secret", StringComparison.OrdinalIgnoreCase) < 0
-            && value.IndexOf("/api/v1/secrets", StringComparison.OrdinalIgnoreCase) < 0
-            && value.IndexOf("/api/v2/secrets", StringComparison.OrdinalIgnoreCase) < 0)
+            && value.IndexOf("secretsmanager", StringComparison.OrdinalIgnoreCase) < 0)
         {
             return false;
         }

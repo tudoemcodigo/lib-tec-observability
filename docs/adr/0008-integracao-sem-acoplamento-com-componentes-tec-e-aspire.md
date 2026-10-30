@@ -37,8 +37,10 @@ O ecossistema TEC (Core, Vault, Cqrs, Security, ORM) precisa de traces e métric
 5. **Um só exporta.** Com o `ServiceDefaults` exportando, o `Provider` é `None`; com o TEC.Observability exportando, remove-se
    o `UseOtlpExporter`/`UseAzureMonitor` do `ServiceDefaults`. As variáveis `OTEL_SERVICE_NAME` e `OTEL_EXPORTER_OTLP_*`
    continuam valendo.
-6. **Cofres fora dos traces.** Chamadas do `HttpClient` a cofres de segredos (Azure, AWS, GCP, HashiCorp Vault, Infisical)
-   não geram span; as operações continuam visíveis pelos spans do próprio TEC.Vault
+6. **Cofres fora dos traces, sem conhecer o TEC.Vault.** Chamadas do `HttpClient` a cofres de segredos não geram span: os
+   de nuvem (Azure, AWS, GCP) são reconhecidos pelo host; os próprios (HashiCorp Vault, Infisical...), pelos hosts de
+   `SecretStoreHosts`, configurados pelo serviço. A biblioteca não presume os caminhos de nenhum componente de cofre; as
+   operações continuam visíveis pelos spans do próprio TEC.Vault (fontes `TEC.*`)
    ([`TelemetryRedaction.cs`](../../TEC.Observability/Tracing/TelemetryRedaction.cs)). Segredos de telemetria podem vir do
    TEC.Vault como provedor de configuração (ver [ADR 0007](0007-configuracao-validada-na-subida-e-lida-na-criacao-dos-componentes.md)),
    e o health check do cofre entra no `/health/ready`.

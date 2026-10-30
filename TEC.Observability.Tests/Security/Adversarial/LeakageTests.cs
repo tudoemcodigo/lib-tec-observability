@@ -64,8 +64,8 @@ public class LeakageTests
 
         await Assert.That(messages.Any(m => m.Contains("/consulta-vazamento?token=Redacted&pagina=Redacted", StringComparison.Ordinal))).IsTrue()
             .Because("o log de requisição do ASP.NET Core continua com a rota e os nomes dos parâmetros");
-        // .NET 8: logger da biblioteca (api_key=Redacted); .NET 9+: o próprio HttpClient já troca a query por "*"
-        await Assert.That(messages.Any(m => m.Contains("/parceiro?api_key=Redacted", StringComparison.Ordinal) || m.Contains("/parceiro?*", StringComparison.Ordinal))).IsTrue()
+        // O próprio HttpClient troca a query por "*" nos logs padrão do IHttpClientFactory
+        await Assert.That(messages.Any(m => m.Contains("/parceiro?*", StringComparison.Ordinal))).IsTrue()
             .Because("o log da chamada de saída continua com a URL");
     }
 

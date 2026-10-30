@@ -330,15 +330,21 @@ public class SensitiveDataRedactionTests
         processor.OnStart(gcpVault);
         await Assert.That(gcpVault.GetTagItem("url.full")).IsEqualTo("https://secretmanager.googleapis.com/v1/projects/my-p/secrets/***");
 
+        // Cofres próprios só pelo host configurado (SecretStoreHosts); nomes únicos: a lista é do processo e só soma.
+        var suffix = Guid.NewGuid().ToString("N")[..8];
+        var hashiHost = $"vault-{suffix}.corp";
+        var infisicalHost = $"infisical-{suffix}.corp";
+        TelemetryRedaction.RegisterSecretStoreHosts([hashiHost, $"*.{infisicalHost}"]);
+
         using var hashiVault = source.StartActivity("GET", ActivityKind.Client)!;
-        hashiVault.SetTag("url.full", $"https://vault.corp:8200/v1/secret/data/{Secret}");
+        hashiVault.SetTag("url.full", $"https://{hashiHost}:8200/v1/secret/data/{Secret}");
         processor.OnStart(hashiVault);
-        await Assert.That(hashiVault.GetTagItem("url.full")).IsEqualTo("https://vault.corp:8200/v1/secret/***");
+        await Assert.That(hashiVault.GetTagItem("url.full")).IsEqualTo($"https://{hashiHost}:8200/v1/secret/***");
 
         using var infisicalVault = source.StartActivity("GET", ActivityKind.Client)!;
-        infisicalVault.SetTag("url.full", $"https://app.infisical.com/api/v1/secrets/{Secret}");
+        infisicalVault.SetTag("url.full", $"https://app.{infisicalHost}/api/v1/secrets/{Secret}");
         processor.OnStart(infisicalVault);
-        await Assert.That(infisicalVault.GetTagItem("url.full")).IsEqualTo("https://app.infisical.com/api/v1/secrets/***");
+        await Assert.That(infisicalVault.GetTagItem("url.full")).IsEqualTo($"https://app.{infisicalHost}/api/v1/secrets/***");
     }
 
     // ---------- Arquivo de logs ----------
@@ -368,7 +374,7 @@ public class SensitiveDataRedactionTests
         {
             using (logger.BeginScope(new Dictionary<string, object> { ["ApiKey"] = Secret, ["Url"] = $"https://h.com/x?t={Secret}" }))
                 logger.LogError(new InvalidOperationException($"conexão Server=db;Password={Secret};"), "Falhou");
-        });
+        }, ("IncludeScopes", "true"), ("AllowedScopeKeys:0", "ApiKey"), ("AllowedScopeKeys:1", "Url"));
 
         var text = string.Join('\n', lines);
         await Assert.That(text).DoesNotContain(Secret);
@@ -479,12 +485,12 @@ public class SensitiveDataRedactionTests
         return logs.ToArray().Single(l => l.CategoryName == category);
     }
 
-    private static async Task<string[]> LogToFileAsync(Action<ILogger> log)
+    private static async Task<string[]> LogToFileAsync(Action<ILogger> log, params (string Key, string? Value)[] settings)
     {
         var folder = Path.Combine(Path.GetTempPath(), "tec-obs-redacao-" + Guid.NewGuid().ToString("N"));
         try
         {
-            await using (var app = await TestApp.StartAsync(settings: [("Provider", "LogFile"), ("LogFile:FolderPath", folder)]))
+            await using (var app = await TestApp.StartAsync(settings: [("Provider", "LogFile"), ("LogFile:FolderPath", folder), .. settings]))
             {
                 log(app.Services.GetRequiredService<ILoggerFactory>().CreateLogger("Redacao"));
                 app.Services.GetRequiredService<LoggerProvider>().ForceFlush(10_000);

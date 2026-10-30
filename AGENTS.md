@@ -15,16 +15,16 @@ Este arquivo complementa as instruções herdadas de `AGENT_BASE.md`. O TEC.Obse
 
 ## Mapa da implementação
 
-- `TEC.Observability/`: biblioteca multi-target (`net8.0` e `net10.0`), pacote base compatível com Native AOT.
+- `TEC.Observability/`: biblioteca em `net10.0`, pacote base compatível com Native AOT.
   - `DependencyInjection/`: `AddTecObservability`, `ObservabilityBuilder` (encadeia `AddExporter`, `AddActivitySource`, `AddMeter`, `AddDatabaseHealthCheck`, `AddSsoHealthCheck`, `AddExternalServiceHealthCheck`, `AddTcpHealthCheck`), `UseTecObservability` (correlation id + `/health/live` + `/health/ready`).
-  - `Configuration/`: `ObservabilityOptions` com validação na subida, `Provider` combinável (`"Otlp, LogFile"`), `OtlpOptions`, `LogFileOptions`, `HealthCheckOptions`.
-  - `Redaction/`: redator de dados sensíveis antes de qualquer exportador (query string, URLs, headers, atributos, pares chave-valor).
-  - `Correlation/`: middleware `UseCorrelationId` (nomes `X-Correlation-ID`, `correlation.id`), `BaggageAllowedHosts`, `AllowInboundBaggage`.
+  - `Configuration/`: `ObservabilityOptions` com validação na subida, `Provider` combinável (`"Otlp, LogFile"`), `OtlpExporterSettings`, `LogFileExporterSettings`, `ObservabilityHealthChecksOptions`.
+  - `Internal/`: redação de texto livre e de valores (`SensitiveData.cs`: `SensitiveKeys`, `SensitiveText`, `SensitiveValue`), `RedactedException`, `AsciiToken`, `HttpUrl`.
+  - `Tracing/`: correlation id (`CorrelationIdMiddleware`, nomes `X-Correlation-ID` e `correlation.id`), filtro de Baggage por host (`BaggagePropagation.cs`: `BaggageAllowedHosts`; `AllowInboundBaggage` é lida no middleware), `ContextPropagationListener` (só com `Provider: None`), `RequestPathFilter` e os processadores de redação de logs e spans (`LogRedaction.cs`, `TelemetryRedaction.cs`).
   - `HealthChecks/`: liveness (só processo), readiness (dependências com cache, execução única, prazo), JSON padronizado, rotas ignoradas no trace.
-  - `Telemetry/`: `ActivitySource` e `Meter` `TEC.Observability` da BCL; assina prefixo `TEC.*` dos outros componentes.
-  - `Export/`: `ITelemetryExporter` (ponto de extensão para backends próprios).
+  - `Exporters/`: `ITelemetryExporter` (ponto de extensão para backends próprios), exportadores embutidos `Otlp`, `Console` e `LogFile`.
+  - Fontes e medidores: o pacote não cria `ActivitySource` nem `Meter` próprios; registra o nome do `ServiceName` e assina o prefixo `TEC.*` dos outros componentes (`ServiceCollectionExtensions.TecTelemetryPrefix`).
 - `TEC.Observability.Azure/`: exportador Azure Monitor / Application Insights (`.AddAzureMonitorExporter()`), ingestão por chave ou Entra ID. **Não compatível com Native AOT**.
-- `TEC.Observability.Tests/`: 371 testes unitários (regressão, segurança, fuzzing, DoS, vazamento) em `net10.0`, `net8.0` e sem ICU.
+- `TEC.Observability.Tests/`: 499 testes unitários (regressão, segurança, fuzzing, DoS, vazamento) em `net10.0` e sem ICU.
 - `TEC.Observability.Azure.Tests/`: 29 unitários e 3 de integração (Application Insights real).
 - `TEC.Observability.LoadTests/`: 5 de carga rápida (`Carga-CI`) e suítes pesadas (`Carga-Pesada`, `Seguranca-Pesada`) sob demanda.
 - `samples/`: API de exemplo e gerador de carga HTTP.
@@ -35,10 +35,12 @@ Este arquivo complementa as instruções herdadas de `AGENT_BASE.md`. O TEC.Obse
 ## Contratos relevantes
 
 - `Directory.Build.props` é a fonte única de versão do pacote (uma versão para os dois pacotes). A versão inicial é `0.0.1`; não introduza versões nos `.csproj`.
-- `Directory.Packages.props` pode declarar versões distintas por TFM; condições por TFM são intencionais.
+- `Directory.Packages.props` declara uma versão por pacote (alvo único `net10.0`); pacotes do ASP.NET Core acompanham o .NET do alvo.
 - Dependências TEC.* são declaradas com `<TecReference Include="..." />`, não com `PackageReference` direto.
 - O TEC.Observability **não depende de nenhum TEC.\*** em produção e **nenhum componente depende dele**. Cada componente emite `ActivitySource` e `Meter` da BCL com o nome `TEC.<Componente>`; o TEC.Observability apenas assina o prefixo `TEC.*`.
-- `Otlp:Headers` e `Azure:ConnectionString` podem vir do TEC.Vault; health check do cofre no `/health/ready`.
+- `Otlp:Headers` e `Azure:ConnectionString` podem vir do TEC.Vault; health check do cofre no `/health/ready`. A redação não conhece o TEC.Vault: cofres próprios entram por `SecretStoreHosts` (os de nuvem são reconhecidos pelo host).
+- Estado do processo (estático, só soma): `AdditionalSensitiveKeys`, `SecretStoreHosts`, propagadores e `BaggageHostPolicy.Default`. Testes que mexem nisso usam nomes únicos ou `[NotInParallel]`.
+- Escopos de log: o `IncludeScopes` do OpenTelemetry fica desligado; `Observability:IncludeScopes` + `AllowedScopeKeys` exportam escopos como atributos redigidos (`LogScopeCapture` + `LogRedactionProcessor`).
 - Native AOT: ✅ `TEC.Observability` (`IsAotCompatible`, binding de configuração gerado em compilação, JSON com `Utf8JsonWriter`) · ❌ `TEC.Observability.Azure` (SDK do Azure Monitor gera avisos de trimming).
 - Workflows dos consumidores chamam `tudoemcodigo/tec-workflows`; confira as tags realmente publicadas antes de alterar referências.
 - A licença é Apache-2.0. Mantenha `LICENSE`, `NOTICE`, badge/README e `<PackageLicenseExpression>` coerentes.

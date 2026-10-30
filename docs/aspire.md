@@ -109,6 +109,12 @@ Sem `Otlp:Endpoint`, vale o `OTEL_EXPORTER_OTLP_ENDPOINT` injetado pelo AppHost.
 > Com `Provider: None`, `IgnoredPaths` não é aplicado: configure as rotas ignoradas também no `ServiceDefaults`, senão as
 > sondas de health geram traces no backend do Aspire.
 
+> [!WARNING]
+> O `ServiceDefaults` gerado pelo Aspire liga `logging.IncludeScopes = true` no OpenTelemetry. Com isso, **todos** os
+> escopos de log (`BeginScope`) vão para o backend como foram registrados, sem lista nem redação. Para exportar escopos com
+> a proteção da biblioteca, remova essa linha do `ServiceDefaults` e use `Observability:IncludeScopes` com
+> `AllowedScopeKeys` ([escopos](redacao.md#-escopos-de-log)).
+
 > [!NOTE]
 > O dashboard do Aspire é para desenvolvimento. Em produção, siga a [configuração recomendada](seguranca.md#-configuração-recomendada-para-produção).
 

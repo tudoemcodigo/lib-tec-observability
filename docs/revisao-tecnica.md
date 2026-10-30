@@ -7,8 +7,9 @@
 > com 🧪 foram reproduzidos num programa à parte (fora do repositório).
 
 > [!NOTE]
-> **Documento histórico (2026-10-19).** Números de linha, contagens de testes (323 e 363 por alvo na época; hoje 371 no
-> `TEC.Observability.Tests`) e o estado dos achados são os da data da revisão. Para o comportamento atual, vale o código e
+> **Documento histórico (2026-10-19).** Números de linha, contagens de testes (323 e 363 por alvo na época; hoje 374 no
+> `TEC.Observability.Tests`), as referências `tec-workflows@v2` (a tag publicada e usada hoje é `@v1`) e o estado dos
+> achados são os da data da revisão. Para o comportamento atual, vale o código e
 > os demais documentos; as decisões que vieram dos achados estão nos [ADRs](adr/README.md).
 
 ## 📑 Sumário
@@ -174,7 +175,7 @@ numa URL logada pela aplicação ou o log `Request starting ... ?token=` (quando
 1. Documentar a fronteira (feito nesta revisão em [redacao.md](redacao.md#-uso)) e recomendar em
    [seguranca.md](seguranca.md#-configuração-recomendada-para-produção) `"Logging": { "Console": { "LogLevel": { "Default": "None" } } }`
    (ou `ClearProviders()`) fora de `Development` quando o OpenTelemetry é o canal de logs.
-2. Oferecer opção explícita, ex. `Observability:Logging:RedactAllProviders`, que envolve os `ILoggerProvider` registrados
+2. Oferecer opção explícita, ex. `Observability:RedactAllLoggerProviders` (nome adotado), que envolve os `ILoggerProvider` registrados
    num decorador que aplica `SensitiveText.Redact` na mensagem formatada e `RedactedException` na exceção:
 
 ```csharp
@@ -459,7 +460,7 @@ trocados pelo comportamento novo), `configuracao.md`, `health-checks.md`, `segur
 | 1 | Redação de valores não-`string` e arrays ([S-01](#s-01--objetos-e-arrays-escapam-da-redação)) | Fecha o vazamento mais provável (DTOs em log) |
 | 2 | Propagação de contexto com `Provider: None` ([B-01](#b-01--com-provider-none-o-correlation-id-não-se-propaga)) | Correlação entre serviços independente de exportar |
 | 3 | Opção de redação para todos os `ILoggerProvider` ([S-02](#s-02--redação-só-vale-para-o-pipeline-do-opentelemetry)) | stdout é o canal de log mais comum em contêiner |
-| 4 | Nomes sensíveis extras por configuração (`Observability:Redaction:AdditionalKeys`) e plurais ([S-03](#s-03--lacunas-da-heurística-de-texto-livre-e-de-nomes)) | Hoje a lista é fechada; cada domínio tem os seus (`cpf`, `cardNumber`) |
+| 4 | Nomes sensíveis extras por configuração (`Observability:AdditionalSensitiveKeys`) e plurais ([S-03](#s-03--lacunas-da-heurística-de-texto-livre-e-de-nomes)) | Hoje a lista é fechada; cada domínio tem os seus (`cpf`, `cardNumber`) |
 | 5 | Métricas do próprio componente: duração/status por health check, execuções abandonadas, registros descartados/redigidos | Observar o observador; base para alertas |
 | 6 | `TrustInboundCorrelationId` e opção de ignorar `traceparent` externo (sampler que trata pai remoto não confiável como raiz) | Hoje a doc manda limpar na borda; nem todo serviço tem gateway |
 | 7 | Baseline de API pública ([O-01](#o-01--sem-baseline-de-api-pública)) | Pacote já publicado |

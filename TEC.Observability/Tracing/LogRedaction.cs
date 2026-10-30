@@ -18,8 +18,7 @@ namespace TEC.Observability.Tracing;
 /// <para>
 /// Os logs de requisição do próprio ASP.NET Core (<c>Microsoft.AspNetCore.Hosting.Diagnostics</c>, nível <c>Information</c>:
 /// <c>Request starting HTTP/1.1 GET https://host/rota?token=...</c>) trazem a query string no atributo <c>QueryString</c> e na
-/// mensagem; os do <c>IHttpClientFactory</c> no .NET 8 trazem a URL completa da chamada de saída no atributo <c>Uri</c>. Com o
-/// nível de log padrão, chegavam ao backend sem redação.
+/// mensagem. Com o nível de log padrão, chegavam ao backend sem redação.
 /// </para>
 /// <para>
 /// Regras: o atributo <c>QueryString</c>, valores <see cref="Uri"/> absolutos, atributos de nome sensível
@@ -35,10 +34,11 @@ namespace TEC.Observability.Tracing;
 /// <see cref="RedactedException.OriginalTypeName"/>); sem nada a redigir, a exceção original segue, com o seu tipo.
 /// </para>
 /// <para>
-/// Escopos (<c>BeginScope</c>): o <see cref="LogRecord"/> só permite lê-los (<see cref="LogRecord.ForEachScope{TState}"/>), sem
-/// API para reescrevê-los, então os exportadores que incluem escopos (OTLP, Azure Monitor, console, exportador próprio) recebem os
-/// valores como foram registrados. O arquivo de logs (<c>LogFile</c>) redige os escopos ao gravar. Não coloque segredo nem dado
-/// pessoal em escopo de log.
+/// Escopos (<c>BeginScope</c>): o <see cref="LogRecord"/> não tem API para reescrevê-los, então o <c>IncludeScopes</c> do
+/// OpenTelemetry fica desligado e os escopos não seguem como foram registrados. Com <c>Observability:IncludeScopes</c>, este
+/// processador lê os escopos ativos (<see cref="LogScopeCapture"/>) e acrescenta aos atributos só as chaves permitidas
+/// (<see cref="LogScopePolicy"/>), com os valores redigidos — é assim que os exportadores (OTLP, Azure Monitor, console, arquivo,
+/// exportador próprio) os recebem.
 /// </para>
 /// <para>
 /// Custo: sem nada a redigir, nenhuma alocação nos atributos de texto e escalares — só a conferência do nome de cada atributo e
@@ -57,7 +57,95 @@ internal sealed class LogRedactionProcessor : BaseProcessor<LogRecord>
     /// <summary>Valores redigidos mais curtos que isso não são procurados na mensagem sem modelo (trocariam trechos sem relação).</summary>
     private const int MinReplacementLength = 3;
 
-    public override void OnEnd(LogRecord data) => Redact(data);
+    /// <summary>Teto de itens de escopo acrescentados a um log (escopos aninhados sem limite não viram atributos sem limite).</summary>
+    internal const int MaxScopeAttributes = 64;
+
+    private readonly LogScopePolicy? _scopePolicy;
+    private readonly LogScopeCapture? _scopeCapture;
+
+    /// <summary>Só redação, sem escopos.</summary>
+    public LogRedactionProcessor()
+    {
+    }
+
+    /// <summary>Redação e, com <paramref name="scopePolicy"/>, os escopos permitidos como atributos redigidos.</summary>
+    internal LogRedactionProcessor(LogScopePolicy? scopePolicy, LogScopeCapture? scopeCapture)
+    {
+        _scopePolicy = scopePolicy;
+        _scopeCapture = scopeCapture;
+    }
+
+    public override void OnEnd(LogRecord data)
+    {
+        Redact(data);
+        // OnEnd roda na mesma chamada do ILogger.Log: os escopos ativos são os do log.
+        if (_scopePolicy is not null && _scopeCapture?.Scopes is { } scopes)
+            AppendScopes(data, scopes, _scopePolicy);
+    }
+
+    /// <summary>
+    /// Acrescenta aos atributos do registro os itens dos escopos ativos com chave permitida, do escopo mais externo para o mais
+    /// interno. Uma chave que já existe nos atributos (ou num escopo anterior) não é repetida; nulos e escopos sem chave saem.
+    /// </summary>
+    internal static void AppendScopes(LogRecord record, IExternalScopeProvider scopes, LogScopePolicy policy)
+    {
+        var collector = new ScopeCollector(record.Attributes, policy);
+        scopes.ForEachScope(static (scope, state) => state.Add(scope), collector);
+        if (collector.Items is { Count: > 0 } items)
+            record.Attributes = [.. record.Attributes ?? [], .. items];
+    }
+
+    /// <summary>Valor de escopo redigido: nome sensível vira <c>Redacted</c>; textos, objetos e coleções passam pela redação de texto livre.</summary>
+    internal static object RedactScopeValue(string key, object value)
+    {
+        if (value is bool)
+            return value;
+        if (SensitiveKeys.IsSensitive(key))
+            return SensitiveText.RedactedValue;
+        if (value is string text)
+            return SensitiveText.Redact(text);
+        return SensitiveValue.TryRedact(value, out var redacted) ? redacted : value;
+    }
+
+    private sealed class ScopeCollector(IReadOnlyList<KeyValuePair<string, object?>>? attributes, LogScopePolicy policy)
+    {
+        public List<KeyValuePair<string, object?>>? Items { get; private set; }
+
+        public void Add(object? scope)
+        {
+            if (scope is not IEnumerable<KeyValuePair<string, object?>> pairs)
+                return;
+
+            try
+            {
+                foreach (var (key, value) in pairs)
+                {
+                    if (Items?.Count >= MaxScopeAttributes)
+                        return;
+                    if (value is null || key is null || !policy.Allows(key) || Contains(attributes, key) || Contains(Items, key))
+                        continue;
+                    (Items ??= []).Add(new KeyValuePair<string, object?>(key, RedactScopeValue(key, value)));
+                }
+            }
+            catch (Exception ex) when (ex is not OutOfMemoryException)
+            {
+                // Escopo que falha ao ser enumerado (estado do chamador) não derruba o log: os itens já lidos ficam.
+            }
+        }
+
+        private static bool Contains(IReadOnlyList<KeyValuePair<string, object?>>? list, string key)
+        {
+            if (list is null)
+                return false;
+            for (var i = 0; i < list.Count; i++)
+            {
+                if (string.Equals(list[i].Key, key, StringComparison.Ordinal))
+                    return true;
+            }
+
+            return false;
+        }
+    }
 
     internal static void Redact(LogRecord record)
     {
@@ -338,102 +426,49 @@ internal sealed class RedactingLoggerFactory(ILoggerFactory inner, bool ownsInne
     }
 }
 
-#if !NET9_0_OR_GREATER
 /// <summary>
-/// No .NET 8, os logs padrão do <c>IHttpClientFactory</c> trazem a URL completa da chamada de saída, inclusive no escopo
-/// <c>HTTP {Method} {Uri}</c> de todos os logs feitos durante a chamada — e o escopo não pode ser reescrito pelo
-/// <see cref="LogRedactionProcessor"/>. Este logger substitui o padrão por mensagens equivalentes com a URL redigida (o .NET 9
-/// ou superior já redige a query string nesses logs, e nada muda lá).
+/// Chaves de escopo exportadas (<c>Observability:AllowedScopeKeys</c>), sem diferenciar maiúsculas; <c>*</c> permite todas. O
+/// <c>correlation.id</c> da biblioteca sempre entra; chave vazia e <c>{OriginalFormat}</c> nunca.
 /// </summary>
-/// <remarks>
-/// Mensagens dos dois loggers padrão, nas mesmas categorias por cliente: <c>System.Net.Http.HttpClient.{nome}.LogicalHandler</c>
-/// (início, fim e falha da chamada, por fora de todo o pipeline) e <c>System.Net.Http.HttpClient.{nome}.ClientHandler</c> (cada
-/// tentativa, por dentro de retries). Os filtros de <c>Logging:LogLevel:System.Net.Http.HttpClient.{nome}</c> continuam valendo.
-/// Um cliente que configurar o próprio logging (<c>RemoveAllLoggers</c>, <c>AddLogger</c>) substitui este.
-/// </remarks>
-internal sealed partial class RedactingHttpClientLogger : Microsoft.Extensions.Http.Logging.IHttpClientLogger
+internal sealed class LogScopePolicy
 {
-    internal const string CategoryPrefix = "System.Net.Http.HttpClient";
+    private readonly bool _any;
+    private readonly HashSet<string> _keys = new(StringComparer.OrdinalIgnoreCase) { CorrelationId.AttributeName };
 
-    /// <summary>
-    /// Nome do cliente cujo pipeline está sendo montado. O <c>IHttpClientFactory</c> roda as ações do builder e, logo depois, as
-    /// de logging, na mesma thread e de forma síncrona: <see cref="CaptureClientName"/> grava o nome e a fábrica do logger o lê.
-    /// </summary>
-    [ThreadStatic]
-    private static string? _buildingClientName;
-
-    private readonly ILogger _logger;
-    private readonly bool _logical;
-
-    private RedactingHttpClientLogger(ILoggerFactory loggerFactory, string? clientName, bool logical)
+    public LogScopePolicy(IEnumerable<string?> keys)
     {
-        var name = string.IsNullOrEmpty(clientName) ? "Default" : clientName;
-        _logger = loggerFactory.CreateLogger($"{CategoryPrefix}.{name}.{(logical ? "LogicalHandler" : "ClientHandler")}");
-        _logical = logical;
+        foreach (var key in keys)
+        {
+            if (string.IsNullOrWhiteSpace(key))
+                continue;
+            if (key.Trim() == "*")
+                _any = true;
+            else
+                _keys.Add(key.Trim());
+        }
     }
 
-    /// <summary>Ação do builder de handlers que guarda o nome do cliente para os loggers criados em seguida.</summary>
-    internal static void CaptureClientName(Microsoft.Extensions.Http.HttpMessageHandlerBuilder builder) => _buildingClientName = builder.Name;
+    public bool Allows(string key) =>
+        key.Length > 0 && key != LogRedactionProcessor.OriginalFormatAttribute && (_any || _keys.Contains(key));
+}
 
-    /// <summary>Logger da chamada inteira (por fora do pipeline), como o <c>LogicalHandler</c> padrão.</summary>
-    internal static RedactingHttpClientLogger Logical(ILoggerFactory loggerFactory) => new(loggerFactory, _buildingClientName, logical: true);
+/// <summary>
+/// Provedor de log que não grava nada: só recebe do <c>ILoggerFactory</c> o <see cref="IExternalScopeProvider"/> (os escopos
+/// ativos de <c>BeginScope</c>), que o <see cref="LogRedactionProcessor"/> lê para exportar os escopos permitidos. Fica fora de
+/// todos os filtros de log (nível <c>None</c>), então nenhuma mensagem passa por ele.
+/// </summary>
+internal sealed class LogScopeCapture : ILoggerProvider, ISupportExternalScope
+{
+    private volatile IExternalScopeProvider? _scopes;
 
-    /// <summary>Logger de cada tentativa (por dentro do pipeline), como o <c>ClientHandler</c> padrão.</summary>
-    internal static RedactingHttpClientLogger Client(ILoggerFactory loggerFactory) => new(loggerFactory, _buildingClientName, logical: false);
+    /// <summary>Escopos do <c>ILoggerFactory</c>, ou <c>null</c> antes de a fábrica registrar este provedor.</summary>
+    public IExternalScopeProvider? Scopes => _scopes;
 
-    public object? LogRequestStart(HttpRequestMessage request)
+    public void SetScopeProvider(IExternalScopeProvider scopeProvider) => _scopes = scopeProvider;
+
+    public ILogger CreateLogger(string categoryName) => Microsoft.Extensions.Logging.Abstractions.NullLogger.Instance;
+
+    public void Dispose()
     {
-        if (_logical)
-            RequestPipelineStart(_logger, request.Method, Url(request));
-        else
-            ClientLog.RequestStart(_logger, request.Method, Url(request));
-        return null;
-    }
-
-    public void LogRequestStop(object? context, HttpRequestMessage request, HttpResponseMessage response, TimeSpan elapsed)
-    {
-        if (_logical)
-            RequestPipelineEnd(_logger, elapsed.TotalMilliseconds, (int)response.StatusCode);
-        else
-            ClientLog.RequestEnd(_logger, elapsed.TotalMilliseconds, (int)response.StatusCode);
-    }
-
-    public void LogRequestFailed(object? context, HttpRequestMessage request, HttpResponseMessage? response, Exception exception, TimeSpan elapsed)
-    {
-        if (_logical)
-            RequestPipelineFailed(_logger, exception, request.Method, Url(request), elapsed.TotalMilliseconds);
-        else
-            ClientLog.RequestFailed(_logger, exception, request.Method, Url(request), elapsed.TotalMilliseconds);
-    }
-
-    private static string? Url(HttpRequestMessage request) => request.RequestUri switch
-    {
-        null => null,
-        { IsAbsoluteUri: true } uri when SensitiveText.NeedsRedaction(uri) => SensitiveText.RedactUrl(uri),
-        { IsAbsoluteUri: true } uri => uri.GetLeftPart(UriPartial.Path) + uri.Query,
-        var uri => uri.OriginalString.Split('?', 2)[0],
-    };
-
-    [LoggerMessage(EventId = 100, EventName = "RequestPipelineStart", Level = LogLevel.Information, Message = "Start processing HTTP request {HttpMethod} {Uri}")]
-    private static partial void RequestPipelineStart(ILogger logger, HttpMethod httpMethod, string? uri);
-
-    [LoggerMessage(EventId = 101, EventName = "RequestPipelineEnd", Level = LogLevel.Information, Message = "End processing HTTP request after {ElapsedMilliseconds}ms - {StatusCode}")]
-    private static partial void RequestPipelineEnd(ILogger logger, double elapsedMilliseconds, int statusCode);
-
-    [LoggerMessage(EventId = 102, EventName = "RequestPipelineFailed", Level = LogLevel.Information, Message = "HTTP request {HttpMethod} {Uri} failed after {ElapsedMilliseconds}ms")]
-    private static partial void RequestPipelineFailed(ILogger logger, Exception exception, HttpMethod httpMethod, string? uri, double elapsedMilliseconds);
-
-    /// <summary>Mensagens do <c>ClientHandler</c> padrão: mesmos ids de evento do <c>LogicalHandler</c>, em outra categoria.</summary>
-    private static partial class ClientLog
-    {
-        [LoggerMessage(EventId = 100, EventName = "RequestStart", Level = LogLevel.Information, Message = "Sending HTTP request {HttpMethod} {Uri}")]
-        internal static partial void RequestStart(ILogger logger, HttpMethod httpMethod, string? uri);
-
-        [LoggerMessage(EventId = 101, EventName = "RequestEnd", Level = LogLevel.Information, Message = "Received HTTP response headers after {ElapsedMilliseconds}ms - {StatusCode}")]
-        internal static partial void RequestEnd(ILogger logger, double elapsedMilliseconds, int statusCode);
-
-        [LoggerMessage(EventId = 102, EventName = "RequestFailed", Level = LogLevel.Information, Message = "HTTP request {HttpMethod} {Uri} failed after {ElapsedMilliseconds}ms")]
-        internal static partial void RequestFailed(ILogger logger, Exception exception, HttpMethod httpMethod, string? uri, double elapsedMilliseconds);
     }
 }
-#endif

@@ -165,6 +165,44 @@ public sealed class ObservabilityOptions
     /// </summary>
     public bool RedactAllLoggerProviders { get; set; }
 
+    /// <summary>
+    /// Nomes de atributo sensíveis próprios do serviço, além dos embutidos (ex.: <c>Matricula</c>, <c>NumeroBeneficio</c>). Casam
+    /// como os embutidos: pelo fim do nome, sem diferenciar maiúsculas, acentos e separadores (<c>_</c>, <c>-</c>, <c>.</c>,
+    /// <c>:</c>, espaço), com plural em <c>s</c>; valem para logs, spans, escopos, arquivo de logs e health. Cada nome aceita
+    /// letras, dígitos e separadores, de 3 a 128 caracteres (até 64 nomes), conferido na subida. A lista vale para o processo
+    /// inteiro e só soma (com vários hosts no mesmo processo, ou a cada recarga, vale a união): é lida no
+    /// <c>AddTecObservability</c> e de novo quando as opções são montadas.
+    /// </summary>
+    public IList<string> AdditionalSensitiveKeys { get; set; } = [];
+
+    /// <summary>
+    /// Hosts de cofres de segredos próprios (HashiCorp Vault, OpenBao, Infisical auto-hospedado, CyberArk...), no formato de
+    /// <see cref="BaggageAllowedHosts"/>: nome exato (<c>vault.corp</c>) ou sufixo com curinga (<c>*.vault.svc.cluster.local</c>).
+    /// Chamadas do <c>HttpClient</c> a esses hosts não geram span, e spans de outras instrumentações com URL desses hosts saem
+    /// com o caminho redigido (<c>/v1/secret/***</c>). Os cofres em nuvem (Azure Key Vault e Managed HSM, AWS Secrets Manager,
+    /// GCP Secret Manager) são reconhecidos pelo host sem configuração. Vazio por padrão: o caminho sozinho (<c>/v1/secret</c>,
+    /// <c>/api/v1/secrets</c>) não basta, para não esconder a API de terceiros que usa o mesmo caminho. Vale para o processo
+    /// inteiro e só soma, como <see cref="AdditionalSensitiveKeys"/>.
+    /// </summary>
+    public IList<string> SecretStoreHosts { get; set; } = [];
+
+    /// <summary>
+    /// Exporta os escopos de log (<c>BeginScope</c>) como atributos de cada log, só com as chaves de <see cref="AllowedScopeKeys"/>
+    /// e com os valores redigidos (nome sensível vira <c>Redacted</c>; textos e objetos passam pela redação de texto livre).
+    /// Desligado por padrão: escopos costumam carregar dados de requisição e, antes, iam inteiros e sem redação aos exportadores.
+    /// O mesmo vale para o fim da linha do <c>LogFile</c>. Lido no <c>AddTecObservability</c> (como o <see cref="Provider"/>).
+    /// O <c>IncludeScopes</c> do próprio OpenTelemetry (<c>OpenTelemetryLoggerOptions</c>) não é ligado pela biblioteca; quem o
+    /// ligar (ex.: o <c>ServiceDefaults</c> do .NET Aspire) exporta todos os escopos sem lista nem redação.
+    /// </summary>
+    public bool IncludeScopes { get; set; }
+
+    /// <summary>
+    /// Chaves de escopo exportadas quando <see cref="IncludeScopes"/> está ligado (sem diferenciar maiúsculas; <c>*</c> exporta
+    /// todas). O <c>correlation.id</c> da biblioteca sempre entra. Escopos sem chave (texto simples, como
+    /// <c>BeginScope("pedido 42")</c>) nunca são exportados. Até 64 chaves, lidas no <c>AddTecObservability</c>.
+    /// </summary>
+    public IList<string> AllowedScopeKeys { get; set; } = [];
+
     /// <summary>Opções dos endpoints de health check.</summary>
     public ObservabilityHealthChecksOptions HealthChecks { get; set; } = new();
 }
@@ -225,6 +263,16 @@ public sealed class LogFileExporterSettings
     /// </summary>
     public string FileName { get; set; } = string.Empty;
 
+    /// <summary>
+    /// Nome da instância, acrescentado ao nome dos arquivos depois de um ponto (<c>pedidos-api.pod-7f9c-20261005.txt</c>). Use
+    /// quando várias instâncias gravam na mesma pasta (volume compartilhado): cada uma escreve nos próprios arquivos, e a retenção
+    /// de uma não apaga os da outra (a retenção só considera os arquivos com o mesmo nome e a mesma instância). Em Kubernetes, por
+    /// exemplo, <c>Observability__LogFile__InstanceName=$(HOSTNAME)</c>. Vazio (padrão): sem instância no nome — instâncias que
+    /// dividem a pasta escrevem nos mesmos arquivos e contam juntas na retenção. Aceita letras, dígitos, <c>-</c> e <c>_</c>, até 64
+    /// caracteres.
+    /// </summary>
+    public string InstanceName { get; set; } = string.Empty;
+
     /// <summary>Troca de arquivo por data (padrão: um por dia).</summary>
     public LogFileRollingInterval RollingInterval { get; set; } = LogFileRollingInterval.Day;
 
@@ -243,7 +291,10 @@ public sealed class LogFileExporterSettings
     /// </summary>
     public LogLevel MinimumLevel { get; set; } = LogLevel.Trace;
 
-    /// <summary>Inclui os escopos do log (ex.: <c>CorrelationId</c>, <c>RequestPath</c>) no fim da linha. Padrão: ligado.</summary>
+    /// <summary>
+    /// Inclui no fim da linha os escopos exportados (ex.: <c>correlation.id</c>), que dependem de <c>Observability:IncludeScopes</c>
+    /// e <c>Observability:AllowedScopeKeys</c>, e os atributos do log que não estão no modelo da mensagem. Padrão: ligado.
+    /// </summary>
     public bool IncludeScopes { get; set; } = true;
 }
 

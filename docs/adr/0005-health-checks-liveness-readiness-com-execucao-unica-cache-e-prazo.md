@@ -43,8 +43,10 @@ Havia também o risco de configuração incoerente: um check mais longo que o pr
    `IHttpClientFactory`; 4xx não é repetido, falhas transitórias sim
    ([`HttpEndpointHealthCheck.cs`](../../TEC.Observability/HealthChecks/HttpEndpointHealthCheck.cs)). As sondas e as rotas de
    health não geram trace.
-7. **Liveness reaproveitável.** O check `self` da biblioteca não é registrado se já existe um de mesmo nome com a tag `live`
-   (ex.: o do .NET Aspire `ServiceDefaults`); sem a tag, a subida falha com a instrução.
+7. **Liveness reaproveitável e à prova de falha.** O check `self` da biblioteca não é registrado se já existe um de mesmo
+   nome com a tag `live` (ex.: o do .NET Aspire `ServiceDefaults`); sem a tag, a subida falha com a instrução. O início do
+   processo só é lido com `ExposeDetails`, uma vez e sem inicializador estático: se a plataforma não o informar, o liveness
+   segue `Healthy`, sem os campos de horário ([`LivenessHealthCheck.cs`](../../TEC.Observability/HealthChecks/LivenessHealthCheck.cs)).
 
 Detalhes em [health-checks.md](../health-checks.md).
 
@@ -60,5 +62,4 @@ Detalhes em [health-checks.md](../health-checks.md).
 - O resultado pode ter até `CacheDuration` de idade, e o horário vem do `TimeProvider` do container.
 - Checks registrados direto no `IHealthChecksBuilder` não entram na conferência de prazo da subida: o autor garante que
   terminem antes de `HealthChecks:Timeout`.
-- No .NET 8 as sondas entram na métrica `http.server.request.duration` (`DisableHttpMetrics` só existe a partir do .NET 9).
 - Durante o encerramento da aplicação o readiness responde 503 de propósito.

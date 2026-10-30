@@ -72,9 +72,12 @@ Nomes são comparados sem diferenciar maiúsculas; repetidos contam uma vez; a o
 | Jaeger (OTLP nativo) | `http://jaeger:4317` | `Grpc` |
 | Coletor atrás de proxy HTTP | `https://otlp.empresa.com` | `HttpProtobuf` |
 
-#### 🌐 Conectando com os Grandes Players de Observabilidade via OTLP
+#### 🌐 Backends comerciais via OTLP
 
-O **OpenTelemetry (OTLP)** é o padrão aberto absoluto adotado pela indústria (CNCF). Em vez de instalar SDKs proprietários de terceiros (que quebram Native AOT, aumentam o binário e geram vulnerabilidades de supply chain), o **TEC.Observability** conecta-se a qualquer player do mercado usando apenas configuração:
+Estes fornecedores recebem OTLP, direto ou por um agente. O pacote não precisa do SDK de nenhum deles: basta apontar o
+`Endpoint` e, se houver, informar o `Headers`. Os valores de `Headers` abaixo são placeholders: guarde as chaves reais num
+cofre ou em variável protegida ([segurança](#️-segurança)). Os endereços e formatos de cabeçalho são os da documentação de
+cada fornecedor na época da escrita; confira-os antes de usar.
 
 <details>
 <summary><b>1. 🟧 Grafana Cloud / Grafana Stack (Tempo, Mimir, Loki)</b></summary>
@@ -113,13 +116,13 @@ O Datadog Agent possui receptor nativo de OpenTelemetry (`otlp_config: { receive
   }
 }
 ```
-*Zero SDK proprietário Datadog: 100% Native AOT preservado e traces/métricas/logs enviados com enriquecimento pelo Agent.*
+Sem SDK do Datadog, o pacote base continua compatível com Native AOT; o Agent enriquece e encaminha os três sinais.
 </details>
 
 <details>
 <summary><b>3. 🟩 New Relic (Ingestão OTLP Direta)</b></summary>
 
-A New Relic recebe OTLP diretamente no endpoint global da nuvem:
+A New Relic recebe OTLP direto, no endpoint da região:
 
 ```json
 {
@@ -180,7 +183,7 @@ Tanto na AWS (ECS/EKS via AWS Distro for OpenTelemetry) quanto no Google Cloud (
 <details>
 <summary><b>6. 🔴 Zabbix 7.0+</b></summary>
 
-O Zabbix 7.0+ suporta ingestão de dados e métricas do OpenTelemetry. Para integração, o tráfego OTLP é enviado ao OpenTelemetry Collector ou gateway que converte/repasse métricas para o Zabbix trapper / JSON API.
+Não há exemplo de configuração direta: este repositório não testou a ingestão no Zabbix. O caminho indicado é enviar o OTLP a um OpenTelemetry Collector (ou gateway) que converta e repasse as métricas ao Zabbix (trapper ou API JSON); confira na documentação do Zabbix o que a sua versão aceita.
 </details>
 
 - Com `HttpProtobuf`, `/v1/traces`, `/v1/metrics` e `/v1/logs` são acrescentados ao endereço base.
@@ -295,7 +298,8 @@ fora da thread da aplicação.
       "RetainedFileCount": 31,
       "MinimumLevel": "Information",
       "IncludeScopes": true
-    }
+    },
+    "IncludeScopes": true
   }
 }
 ```
@@ -309,13 +313,15 @@ logs/pedidos-api-20261005.txt
 
 | Regra | Detalhe |
 |---|---|
-| Nome | `{FileName}-{yyyyMMdd}.txt` (`Day`), `{FileName}-{yyyyMMddHH}.txt` (`Hour`) ou `{FileName}.txt` (`None`); passou de `MaxFileSizeBytes`, `_001`, `_002`... no mesmo período |
+| Nome | `{FileName}-{yyyyMMdd}.txt` (`Day`), `{FileName}-{yyyyMMddHH}.txt` (`Hour`) ou `{FileName}.txt` (`None`); com `InstanceName`, `{FileName}.{InstanceName}-{yyyyMMdd}.txt`; passou de `MaxFileSizeBytes`, `_001`, `_002`... no mesmo período |
 | Linha | `{data local} [{nível}] {categoria}[{evento}]: {mensagem} \| trace_id=... span_id=... \| {escopos}`; a exceção e as linhas seguintes da mensagem vão recuadas abaixo |
+| Escopos | Os exportados por `Observability:IncludeScopes` + `AllowedScopeKeys` (o `correlation.id` sempre) e os atributos que não estão no modelo da mensagem. Com `Observability:IncludeScopes` desligado (padrão), a linha termina no `trace_id`/`span_id` |
 | *Log forging* | Quebras de linha (inclusive `U+0085`, `U+2028`, `U+2029`) viram nova linha **recuada**; demais caracteres de controle (ex.: ANSI `ESC`) são gravados escapados (`\u001B`). Nenhum texto consegue forjar uma linha que pareça outro registro |
 | Limites | Mensagem até 32 K caracteres; exceção e cada valor de escopo até 64 K; registro inteiro até 192 K (`MaxRecordLength`: escopos excedentes omitidos com `…[truncado]`) |
 | Buffer | Teto real de 256 K caracteres (`MaxBufferedChars`): ao passar, o que está acumulado é gravado e o lote recomeça; pico de memória = teto + um registro. Por isso um lote grande pode se dividir entre arquivos na troca por tamanho |
-| Redação | Mensagem, atributos e exceção já chegam redigidos (como em todo exportador); os **escopos** só são redigidos aqui ([redacao.md](redacao.md#-arquivo-de-logs)) |
-| Retenção | Apaga os mais antigos além de `RetainedFileCount`, só arquivos do próprio serviço (`pedidos` não apaga os de `pedidos-api`) |
+| Redação | Mensagem, atributos, escopos exportados e exceção já chegam redigidos (como em todo exportador) e passam de novo pela redação ao gravar ([redacao.md](redacao.md#-arquivo-de-logs)) |
+| Retenção | Apaga os mais antigos além de `RetainedFileCount`, só arquivos do próprio serviço e da própria instância (`pedidos` não apaga os de `pedidos-api`; `pedidos-api.pod-a` não apaga os de `pedidos-api.pod-b` nem os de `pedidos-api` sem instância) |
+| Várias instâncias na mesma pasta | Sem `InstanceName`, escrevem nos mesmos arquivos e a retenção de uma conta os da outra. Com volume compartilhado, defina `InstanceName` por instância (em Kubernetes, `Observability__LogFile__InstanceName=$(HOSTNAME)`) |
 | Falha de disco | Pasta sem permissão ou disco cheio descartam o lote (falha no meio de um lote dividido perde só o restante), sem derrubar a aplicação |
 | Fila cheia | O processador em lote descarta o excedente (fila padrão de 2.048 registros): registrar log nunca espera o disco |
 | Trace | A instrumentação padrão (ASP.NET Core e HttpClient) é ligada para dar `trace_id`/`span_id` às linhas |
@@ -427,9 +433,10 @@ builder.Services.AddTecObservability(builder.Configuration)
 | `FileName` | `ServiceName` | Início do nome, sem pasta nem extensão (caracteres inválidos do `ServiceName` viram `_`) |
 | `RollingInterval` | `Day` | `Day`, `Hour` ou `None` |
 | `MaxFileSizeBytes` | `10485760` (10 MB) | `0` desliga a troca por tamanho; mínimo 1024 |
-| `RetainedFileCount` | `31` | Arquivos mantidos; `0` mantém todos |
+| `RetainedFileCount` | `31` | Arquivos mantidos por instância; `0` mantém todos |
+| `InstanceName` | vazio | Nome da instância no nome dos arquivos (`{FileName}.{InstanceName}-...`): letras, dígitos, `-` e `_`, até 64 caracteres. Use quando várias instâncias gravam na mesma pasta |
 | `MinimumLevel` | `Trace` | Nível mínimo só do arquivo, além de `Logging:LogLevel`; conferido **antes** da fila do lote (registros abaixo dele não ocupam a fila nem empurram avisos para o descarte numa rajada) |
-| `IncludeScopes` | `true` | Escopos (ex.: `correlation.id`) no fim da linha |
+| `IncludeScopes` | `true` | Escopos exportados no fim da linha. Depende de `Observability:IncludeScopes` (desligado por padrão) e `Observability:AllowedScopeKeys`: com eles desligados, não há escopo a gravar |
 
 **`AzureMonitorExporterOptions`** (`Observability:Azure`, pacote Azure; ajustes em código: `.AddAzureMonitorExporter(o => ...)`)
 
@@ -456,6 +463,7 @@ builder.Services.AddTecObservability(builder.Configuration)
 | `Otlp:Headers (ou as variáveis OTEL_EXPORTER_OTLP_HEADERS e OTEL_EXPORTER_OTLP_<SINAL>_HEADERS) com endpoint http (sem TLS) enviaria os valores em claro...` | Chave em `http` para outra máquina | `https` ou `AllowInsecureTransport` em rede protegida |
 | `LogFile:FolderPath deve ser um caminho de pasta válido.` / `LogFile:FileName deve ser só um nome de arquivo...` | Caminho inválido; nome com pasta, `..` ou caractere inválido | Corrija |
 | `LogFile:MaxFileSizeBytes deve ser 0 (sem limite) ou ao menos 1024.` / `LogFile:RetainedFileCount não pode ser negativo...` / `... RollingInterval/MinimumLevel inválido` | Valores fora do intervalo | Corrija |
+| `LogFile:InstanceName aceita só letras, dígitos, '-' e '_'...` | Ponto, espaço, barra ou mais de 64 caracteres | Use só `A-Z a-z 0-9 - _` |
 | `Azure:ConnectionString é obrigatório (ou a variável APPLICATIONINSIGHTS_CONNECTION_STRING), inclusive com UseManagedIdentity.` | Sem connection string | Defina-a |
 | `Azure:ManagedIdentityClientId deve ser um GUID.` | Client id inválido | Corrija |
 | `NotSupportedException` do SDK na subida | `UseOtlpExporter` (Aspire) e `Provider: Otlp` no mesmo container | Um só exporta ([aspire.md](aspire.md)) |

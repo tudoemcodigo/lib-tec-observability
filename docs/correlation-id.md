@@ -9,6 +9,7 @@
 
 - [🎯 Visão geral](#-visão-geral)
 - [🚀 Uso](#-uso)
+- [🔁 Redirecionamentos](#-redirecionamentos)
 - [⚙️ Opções](#️-opções)
 - [❌ Erros](#-erros)
 - [🛡️ Segurança](#️-segurança)
@@ -22,7 +23,7 @@
 flowchart TD
     R["Requisição"] --> H{"X-Correlation-ID seguro?<br/><sub>até 128: letras, dígitos ASCII, - _ . :</sub>"}
     H -->|sim| ID["usa o cabeçalho"]
-    H -->|não / ausente| B{"Baggage correlation.id seguro?"}
+    H -->|não / ausente| B{"Baggage correlation.id seguro?<br/><sub>do OpenTelemetry ou, sem ele, do Activity</sub>"}
     B -->|sim| ID2["usa o do serviço chamador"]
     B -->|não| T["TraceId (sem Activity: GUID)"]
     ID & ID2 & T --> OUT["span correlation.id · escopo de log ·<br/>cabeçalho de resposta · Baggage"]
@@ -39,11 +40,13 @@ flowchart TD
 |---|---|
 | Requisição traz `X-Correlation-ID` válido | Usado como está |
 | Inválido (caractere fora da lista, mais de 128) | Descartado sem erro: vale o Baggage do chamador ou o TraceId |
+| Sem cabeçalho, com `baggage: correlation.id=...` | Vale o do Baggage, lido do OpenTelemetry e, se lá não houver (com `Provider: None` não há instrumentação para preenchê-lo), do `Activity` da requisição, onde o próprio ASP.NET Core o coloca. Valor inseguro cai no TraceId |
 | Sempre | Atributo `correlation.id` no span, escopo de log `correlation.id` (sem alocar dicionário por requisição), cabeçalho na resposta e item no Baggage W3C |
 | Outros itens de `baggage` recebidos | Descartados (OpenTelemetry e `Activity`); `AllowInboundBaggage: true` os mantém |
 | Chamada HTTP de saída | `baggage` (e `Correlation-Context`) só para hosts de `BaggageAllowedHosts` (padrão: nenhum); o `traceparent` segue sempre — o serviço chamado usa o TraceId como correlation id |
 | `Provider: None` (sem nenhum pipeline de tracing) | Igual aos demais: um listener mínimo (`ContextPropagationListener`, só `Microsoft.AspNetCore` e `System.Net.Http`, `PropagationData`: nada é gravado nem exportado) garante o `Activity`, e o correlation id vai também para o Baggage do `Activity`, escrito pelo próprio `HttpClient` — `traceparent` e `baggage` seguem como com qualquer `Provider` |
 | Baggage nos dois propagadores (OpenTelemetry e .NET) | Um único cabeçalho `baggage` sai (o `HttpClient` não escreve um cabeçalho que já existe) |
+| Redirecionamento automático para host fora da lista | O `baggage` não segue para o novo destino ([redirecionamentos](#-redirecionamentos)) |
 
 ---
 
@@ -74,6 +77,26 @@ app.Run();
 
 Sem `WebApplication`, use `app.UseCorrelationId()` (`IApplicationBuilder`). O middleware deve vir antes dos endpoints e
 dos middlewares que registram logs da requisição.
+
+---
+
+## 🔁 Redirecionamentos
+
+Num redirecionamento automático (`301`, `302`, `307`...), o `HttpClient` reaproveita a mesma `HttpRequestMessage` com a URL
+nova. Um cabeçalho `baggage` escrito para o primeiro destino (permitido) seguiria para o segundo (talvez um terceiro).
+
+| Camada | O que faz |
+|---|---|
+| `SocketsHttpHandler` (.NET 10) | O `DiagnosticsHandler` fica **dentro** do tratamento de redirecionamento: a cada salto, apaga os cabeçalhos de propagação que ele mesmo escreveu e injeta de novo, com a URL do novo destino. O filtro por host roda a cada salto |
+| Propagadores da biblioteca | Para um destino fora de `BaggageAllowedHosts`, além de não escrever, **apagam** o `baggage` e o `Correlation-Context` que já estavam na requisição — inclusive um cabeçalho posto à mão pela aplicação ou por outro handler |
+
+Um `DelegatingHandler` do `IHttpClientFactory` não resolveria: ele fica por fora do `SocketsHttpHandler` e vê só a
+primeira URL, nunca os saltos. O `traceparent` continua seguindo em todos os saltos.
+
+> [!NOTE]
+> A proteção depende de a injeção acontecer, ou seja, de haver `Activity` na chamada (com qualquer `Provider`, inclusive
+> `None`, a biblioteca garante isso nas requisições atendidas). Um handler primário próprio que siga redirecionamentos por
+> conta própria (fora do `SocketsHttpHandler`) não é coberto: desligue `AllowAutoRedirect` nele ou trate o cabeçalho.
 
 ---
 

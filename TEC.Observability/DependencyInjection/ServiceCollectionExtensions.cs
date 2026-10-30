@@ -90,11 +90,15 @@ public static class ServiceCollectionExtensions
         var budgets = new HealthCheckBudgets();
         AddOptions(services, configuration, configure, exporters, budgets);
 
+        // Nomes sensíveis e hosts de cofre próprios valem já para os logs da subida: registrados com a configuração disponível
+        // agora e de novo quando as opções forem montadas (provedores de configuração adicionados depois, ex.: cofre).
+        RegisterProcessWideRedaction(registration);
+
         services.AddSingleton(sp => RequestPathFilter.Create(sp.GetRequiredService<IOptions<ObservabilityOptions>>().Value));
         services.TryAddSingleton(TimeProvider.System);
         services.AddSingleton<HealthReportCache>();
-        // Sem os loggers padrão do IHttpClientFactory: no .NET 8 eles registram a URL completa de cada requisição, e a query
-        // string de uma sondagem pode trazer chave ou token. As falhas já são registradas pelo próprio health check, sem a URL.
+        // Sem os loggers padrão do IHttpClientFactory: a URL de cada sondagem (com caminho e, às vezes, chave na query string) não
+        // precisa ir para os logs. As falhas já são registradas pelo próprio health check, sem a URL.
         services.AddHttpClient(HttpEndpointHealthCheck.HttpClientName)
             .RemoveAllLoggers()
             .ConfigurePrimaryHttpMessageHandler(HttpEndpointHealthCheck.CreateHandler);
@@ -114,7 +118,7 @@ public static class ServiceCollectionExtensions
             tracing.AddProcessor(new SpanRedactionProcessor());
         }));
         AddRedaction(services);
-        AddLogRedaction(services);
+        AddLogRedaction(services, registration);
         if (registration.RedactAllLoggerProviders)
             AddAllLoggerProvidersRedaction(services);
         services.ConfigureOpenTelemetryMeterProvider((sp, metrics) => metrics.AddMeter(sp.Options().ServiceName, TecTelemetryPrefix));
@@ -147,10 +151,23 @@ public static class ServiceCollectionExtensions
 
         services.AddOptions<ObservabilityOptions>()
             .PostConfigure<IServiceProvider>((options, sp) =>
-                ObservabilityOptionsSetup.ApplyDefaults(options, configuration, sp.GetService<IHostEnvironment>()?.IsDevelopment() == true))
+            {
+                ObservabilityOptionsSetup.ApplyDefaults(options, configuration, sp.GetService<IHostEnvironment>()?.IsDevelopment() == true);
+                RegisterProcessWideRedaction(options);
+            })
             .ValidateOnStart();
         services.AddSingleton<IValidateOptions<ObservabilityOptions>>(sp =>
             new ObservabilityOptionsValidator(configuration, sp.GetService<IHostEnvironment>(), exporters, budgets));
+    }
+
+    /// <summary>
+    /// <c>AdditionalSensitiveKeys</c> e <c>SecretStoreHosts</c>: a redação de texto e o filtro de saída do <c>HttpClient</c> são
+    /// estáticos, então as listas valem para o processo e só somam (entradas inválidas são ignoradas aqui e recusadas na validação).
+    /// </summary>
+    private static void RegisterProcessWideRedaction(ObservabilityOptions options)
+    {
+        Internal.SensitiveKeys.Register(options.AdditionalSensitiveKeys);
+        TelemetryRedaction.RegisterSecretStoreHosts(options.SecretStoreHosts);
     }
 
     /// <summary>
@@ -192,8 +209,8 @@ public static class ServiceCollectionExtensions
 
     /// <summary>
     /// Requisições de saída que não viram span de HttpClient: as sondagens dos health checks e as chamadas a cofres de segredos
-    /// (Azure, AWS, GCP, HashiCorp Vault, Infisical) — a URL delas traz o nome e a versão do segredo. As operações do cofre continuam
-    /// visíveis pelos spans do próprio TEC.Vault (fontes <c>TEC.*</c>).
+    /// (Azure, AWS e GCP pelo host; cofres próprios pelos hosts de <c>SecretStoreHosts</c>) — a URL delas traz o nome e a versão do
+    /// segredo. A biblioteca do cofre pode emitir os próprios spans (ex.: fontes <c>TEC.*</c>).
     /// </summary>
     internal static bool ShouldTraceOutgoing(HttpRequestMessage request) =>
         !request.Options.TryGetValue(HttpEndpointHealthCheck.ProbeKey, out _) && !TelemetryRedaction.IsSecretStoreRequest(request.RequestUri);
@@ -228,23 +245,27 @@ public static class ServiceCollectionExtensions
 
     /// <summary>
     /// Query string e credenciais de URL fora dos logs exportados, como nos spans: o processador entra antes dos exportadores
-    /// (registrados depois desta linha) e reescreve os logs de requisição do ASP.NET Core e do <c>HttpClient</c>. No .NET 8, os
-    /// logs padrão do <c>IHttpClientFactory</c> (que põem a URL completa também no escopo) são trocados por loggers equivalentes
-    /// com a URL redigida; um cliente com logging próprio (<c>RemoveAllLoggers</c>/<c>AddLogger</c>) mantém o dele.
+    /// (registrados depois desta linha) e reescreve os logs de requisição do ASP.NET Core e do <c>HttpClient</c>. Com
+    /// <c>IncludeScopes</c>, o mesmo processador acrescenta aos atributos os escopos permitidos por <c>AllowedScopeKeys</c>, já
+    /// redigidos: os escopos do <c>ILoggerFactory</c> são lidos por <see cref="LogScopeCapture"/>, e o <c>IncludeScopes</c> do
+    /// OpenTelemetry fica desligado (com ele, os exportadores receberiam todos os escopos, sem lista nem redação).
     /// </summary>
-    private static void AddLogRedaction(IServiceCollection services)
+    private static void AddLogRedaction(IServiceCollection services, ObservabilityOptions registration)
     {
+        var scopePolicy = registration.IncludeScopes ? new LogScopePolicy(registration.AllowedScopeKeys ?? []) : null;
+        if (scopePolicy is not null)
+        {
+            services.AddLogging();
+            services.TryAddSingleton<LogScopeCapture>();
+            services.TryAddEnumerable(ServiceDescriptor.Singleton<ILoggerProvider, LogScopeCapture>(sp => sp.GetRequiredService<LogScopeCapture>()));
+            // O provedor só recebe o IExternalScopeProvider da fábrica; os logs em si não passam por ele.
+            services.Configure<LoggerFilterOptions>(options => options.AddFilter<LogScopeCapture>(category: null, LogLevel.None));
+        }
+
         // Os processadores rodam na ordem de registro: um exportador registrado antes desta chamada (ex.: .NET Aspire
         // ServiceDefaults com Provider None) veria o log sem redação. O registro do processador vai para o início da coleção.
-        RegisterFirst(services, s => s.ConfigureOpenTelemetryLoggerProvider(logging => logging.AddProcessor(new LogRedactionProcessor())));
-#if !NET9_0_OR_GREATER
-        services.ConfigureAll<Microsoft.Extensions.Http.HttpClientFactoryOptions>(options =>
-            options.HttpMessageHandlerBuilderActions.Insert(0, RedactingHttpClientLogger.CaptureClientName));
-        services.ConfigureHttpClientDefaults(client => client
-            .RemoveAllLoggers()
-            .AddLogger(sp => RedactingHttpClientLogger.Logical(sp.GetRequiredService<Microsoft.Extensions.Logging.ILoggerFactory>()), wrapHandlersPipeline: true)
-            .AddLogger(sp => RedactingHttpClientLogger.Client(sp.GetRequiredService<Microsoft.Extensions.Logging.ILoggerFactory>()), wrapHandlersPipeline: false));
-#endif
+        RegisterFirst(services, s => s.ConfigureOpenTelemetryLoggerProvider(logging => logging.AddProcessor(sp =>
+            new LogRedactionProcessor(scopePolicy, scopePolicy is null ? null : sp.GetService<LogScopeCapture>()))));
     }
 
     /// <summary>
@@ -306,11 +327,9 @@ public static class ServiceCollectionExtensions
             var previous = options.FilterHttpRequestMessage;
             options.FilterHttpRequestMessage = request => ShouldTraceOutgoing(request) && (previous?.Invoke(request) ?? true);
         });
-        services.Configure<OpenTelemetryLoggerOptions>(o =>
-        {
-            o.IncludeScopes = true;
-            o.IncludeFormattedMessage = true;
-        });
+        // IncludeScopes do OpenTelemetry fica no padrão (desligado): os escopos permitidos chegam como atributos já redigidos
+        // (Observability:IncludeScopes e AllowedScopeKeys, em AddLogRedaction).
+        services.Configure<OpenTelemetryLoggerOptions>(o => o.IncludeFormattedMessage = true);
 
         return services.AddOpenTelemetry()
             .ConfigureResource(resource => resource.AddDetector(sp => new ServiceResourceDetector(sp.Options())))

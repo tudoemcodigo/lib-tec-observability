@@ -7,7 +7,7 @@
 Deixa cada serviço ASP.NET Core observável do mesmo jeito: traces, métricas e logs com OpenTelemetry, destino escolhido por
 configuração (`Otlp`, `Console`, `LogFile`, `None` ou um exportador próprio, combináveis), endpoints de liveness e
 readiness com JSON padronizado, correlation id ligado ao trace W3C e redação de dados sensíveis antes de qualquer
-exportador. Compatível com Native AOT, `net8.0` e `net10.0`.
+exportador. Compatível com Native AOT, alvo `net10.0`.
 
 ## Quando usar
 
@@ -69,4 +69,4 @@ A configuração é validada na subida: um erro derruba a inicialização, não 
 - [Segurança](https://github.com/tudoemcodigo/lib-tec-observability/blob/main/docs/seguranca.md)
 - [Changelog](https://github.com/tudoemcodigo/lib-tec-observability/blob/main/CHANGELOG.md)
 
-Licença [MIT](https://github.com/tudoemcodigo/lib-tec-observability/blob/main/LICENSE).
+Licença [Apache 2.0](https://github.com/tudoemcodigo/lib-tec-observability/blob/main/LICENSE).

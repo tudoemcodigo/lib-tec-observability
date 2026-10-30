@@ -153,7 +153,7 @@ Tempo máximo desta verificação: `(Timeout + 1 s) × (Retries + 1)` = `(2 + 1)
 
 ### 🔌 Conectividade TCP (Redis, RabbitMQ, Kafka, Sockets)
 
-Testa a abertura de conexão de socket TCP na porta do serviço de infraestrutura sem depender de SDKs pesados de terceiros, 100% Native AOT:
+Testa a abertura de conexão de socket TCP na porta do serviço de infraestrutura só com `System.Net.Sockets` (sem pacote de terceiros, compatível com Native AOT):
 
 ```csharp
 builder.Services.AddTecObservability(builder.Configuration)
@@ -249,7 +249,8 @@ Com detalhes (`Development`, ou `ExposeDetails: true` com `ManagementPort`):
 
 - `exception.message` só com `ExposeExceptionDetails: true`; stack trace nunca (a falha completa vai para o log, `Warning`).
 - `data` com chave sensível sai `Redacted`; textos são cortados em 1024 caracteres e redigidos ([redacao.md](redacao.md#️-health-checks)).
-- O liveness só inclui `startedAt` e `uptimeSeconds` com detalhes ligados.
+- O liveness só inclui `startedAt` e `uptimeSeconds` com detalhes ligados. O início do processo é lido só nesse caso, uma
+  vez; se a plataforma não o informar (sandbox sem `/proc`, por exemplo), o liveness continua `Healthy`, sem os dois campos.
 
 ---
 

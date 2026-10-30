@@ -46,13 +46,17 @@ flowchart LR
 | Rajada de requisições virando carga nas dependências | Execução única por tag, cache (`CacheDuration`) e prazo (`Timeout`) |
 | Verificação travada prendendo todas as sondas | Prazo da execução inteira com abandono da verificação |
 | Token, senha ou connection string indo para o backend | [Redação](redacao.md) antes de qualquer exportador: nomes sensíveis, query string, credenciais em URL, `Bearer`/`Basic`, pares `chave=valor` |
-| Nome/versão de segredo em `url.full` | Chamadas do `HttpClient` a cofres (Azure, AWS, GCP, HashiCorp Vault, Infisical) não geram span; spans do Azure SDK com `/secrets/***` e `az.keyvault.*` = `***` |
+| Nome/versão de segredo em `url.full` | Chamadas do `HttpClient` a cofres (Azure, AWS e GCP pelo host; cofres próprios pelos hosts de `SecretStoreHosts`) não geram span; spans de cofre com `/secrets/***` e `az.keyvault.*` = `***`. O caminho sozinho não basta: API de terceiro com `/v1/secret` continua no trace |
 | Dados sensíveis no JSON de health | `data` de chave sensível → `Redacted`; textos cortados em 1024 e redigidos; exceção só com `ExposeExceptionDetails`; stack trace nunca |
 | Mensagem gigante esgotando memória/disco | Arquivo de log: mensagem até 32 K, exceção/escopos até 64 K, registro até 192 K, buffer com teto de 256 K caracteres; documento OIDC até 256 KB |
 | Cliente forçando amostragem com `traceparent` | **Não mitigado** com `ParentBased` ([abaixo](#-amostragem-e-traceparent-externo)) |
 | URL de sondagem com token em logs | `HttpClient` das sondagens sem os loggers do `IHttpClientFactory`; falhas registradas sem URL |
 | Chave do backend em claro | `Otlp:Headers` (e `OTEL_EXPORTER_OTLP_HEADERS`/`OTEL_EXPORTER_OTLP_<SINAL>_HEADERS`, por sinal) só com `https` ou endereço local |
 | DTO/`record` com senha em atributo de log ou span | `ToString()` de objetos e itens de coleções varridos; com algo a redigir, o valor vira o texto redigido ([redacao.md](redacao.md#-logs)) |
+| Escopo de log (`BeginScope`) com dado sensível indo para o backend | Escopos fora por padrão; com `IncludeScopes`, só as chaves de `AllowedScopeKeys`, já redigidas ([escopos](redacao.md#-escopos-de-log)) |
+| Nome sensível próprio do domínio (matrícula, prontuário) | `AdditionalSensitiveKeys`, validada na subida |
+| Baggage reenviado num redirecionamento para host não permitido | A injeção roda a cada salto; para destino fora de `BaggageAllowedHosts`, o cabeçalho `baggage` já presente é apagado ([correlation id](correlation-id.md#-redirecionamentos)) |
+| Pares `chave=valor` repetidos numa linha travando a redação | Varredura linear (busca do fim da linha e do `;` reaproveitada) |
 | Segredo no stdout do contêiner (console e outros `ILoggerProvider`) | **Não mitigado por padrão**: desligue `Logging:Console` em produção ou ligue `RedactAllLoggerProviders` |
 | Check de terceiros travado acumulando execuções | No máximo 3 execuções abandonadas por tag; depois, 503 direto até uma terminar |
 | PR de fork usando o runner self-hosted com identidade no Azure | Hook `.github/runner/pre-job.sh` no runner + aprovação de colaboradores externos + runner group restrito ([CI/CD](../.github/workflows/README.md#️-integracao-azureyml)) |
@@ -65,7 +69,7 @@ flowchart LR
 ## ✅ Garantias do componente
 
 - 🔒 **Configuração validada na subida** (`ValidateOnStart`): o serviço não sobe com telemetria quebrada ou insegura, e as
-  mensagens de validação não repetem o valor recebido.
+  mensagens de validação não repetem endpoint, cabeçalhos nem nomes de arquivo (só o nome de um `Provider` inválido é citado).
 - 🔒 **Redação antes de qualquer exportador**, inclusive os de outra biblioteca registrados antes.
 - 🔒 **Endpoints de health** só `GET`, `no-store`, `nosniff`, fora do OpenAPI; liveness sem dados de processo sem
   `ExposeDetails`.
@@ -80,7 +84,8 @@ flowchart LR
 | Responsabilidade | Como |
 |---|---|
 | Não registrar segredos nem dados pessoais | A redação é rede de segurança, não controle primário. CPF, e-mail e texto livre não são reconhecidos |
-| Não pôr segredos nem dados pessoais em escopos (`BeginScope`) | Escopos não podem ser reescritos pela API do OpenTelemetry: `Otlp`/`Azure`/`Console`/próprio os recebem como registrados ([limites](redacao.md#-logs)) |
+| Exportar só escopos necessários | Deixe `IncludeScopes` desligado ou liste em `AllowedScopeKeys` só chaves sem dado pessoal; não ligue o `IncludeScopes` do próprio OpenTelemetry (exporta tudo, sem redação) ([escopos](redacao.md#-escopos-de-log)) |
+| Listar os cofres próprios | `SecretStoreHosts` com o host do HashiCorp Vault/Infisical/OpenBao: sem isso, a chamada ao cofre gera span com o caminho do segredo |
 | Não registrar exceções só como evento de span | `RecordException`/`AddException` não são redigidos (`ActivityEvent` é imutável): registre a exceção em log ou use `SetStatus(Error, descrição)` ([traces](redacao.md#-traces)) |
 | Guardar segredos fora do repositório | `Otlp:Headers` e `Azure:ConnectionString` no cofre ([TEC.Vault](https://github.com/tudoemcodigo/lib-tec-vault)) ou em variáveis protegidas |
 | Isolar a porta de gerência | Escute em duas portas (`ASPNETCORE_HTTP_PORTS=8080;8081`) e **não** publique a de gerência no balanceador |
@@ -122,15 +127,15 @@ escolha do `trace-id` continua possível, então a limpeza na borda vale igual. 
 | `BaggageHostPolicy.Default` | Os propagadores do OpenTelemetry e do .NET são **globais do processo**; a política de `BaggageAllowedHosts` usada fora de uma requisição é a do **último host que subiu**. Num processo com um host (o normal), sem efeito ([detalhes](configuracao.md#-estado-global-do-processo)) |
 | Exportador `Console` | Síncrono: só para desenvolvimento |
 | Redação por heurística | Pode redigir demais (`token: expirado` → `token: Redacted`) — decisão de arquitetura: preferir esconder a vazar |
-| Escopos (`BeginScope`) | Não redigidos nos exportadores (só no `LogFile`, ao gravar) |
+| Escopos (`BeginScope`) | Fora por padrão; com `IncludeScopes`, só as chaves listadas, como atributos redigidos. O `IncludeScopes` do próprio OpenTelemetry, se alguém o ligar, exporta todos sem redação |
+| Listas do processo | `AdditionalSensitiveKeys` e `SecretStoreHosts` valem para o processo inteiro e só somam (remover exige reiniciar) |
 | Eventos de span (`RecordException`) | Não redigidos: `ActivityEvent` é imutável no .NET |
 | Exceção redigida | Com algo a redigir, o exportador recebe `RedactedException` (tipo original no texto e em `OriginalTypeName`; `Exception.Data` não copiado) |
-| .NET 8 | Sondas de health entram em `http.server.request.duration` (`DisableHttpMetrics` é do .NET 9) |
 
 > [!WARNING]
-> **Escopos e eventos de span não são redigidos** nos exportadores `Otlp`, `Azure`, `Console` e próprios. Não coloque
-> segredos nem dados pessoais em `BeginScope`, e registre exceções em log (a exceção do log é redigida para todos os
-> exportadores) ou com `SetStatus(ActivityStatusCode.Error, descrição)` em vez de `RecordException`.
+> **Eventos de span não são redigidos** nos exportadores `Otlp`, `Azure`, `Console` e próprios: registre exceções em log
+> (a exceção do log é redigida para todos os exportadores) ou com `SetStatus(ActivityStatusCode.Error, descrição)` em vez
+> de `RecordException`. Escopos só saem pela lista de `AllowedScopeKeys`; mesmo assim, não coloque segredos em `BeginScope`.
 
 ---
 
@@ -176,7 +181,7 @@ mais tempo e com acesso mais amplo que o backend): `"Logging": { "Console": { "L
 | `packageSourceMapping` | `TEC.*` só do feed `tec-interno`, o resto do nuget.org |
 | SAST | CodeQL `security-extended` em todo PR (dentro do CI central) |
 | Pipeline | Actions de terceiros fixadas por SHA, OIDC sem segredo do Azure, permissões mínimas ([CI/CD](../.github/workflows/README.md#️-segurança)) |
-| Workflows reutilizáveis | `tudoemcodigo/tec-workflows/...@v2`: tag móvel **da mesma organização**, por decisão (política `ref-pin` em `.github/zizmor.yml`); quem tem escrita no `tec-workflows` muda o que roda aqui |
+| Workflows reutilizáveis | `tudoemcodigo/tec-workflows/...@v1`: tag móvel **da mesma organização**, por decisão (política `ref-pin` em `.github/zizmor.yml`); quem tem escrita no `tec-workflows` muda o que roda aqui |
 | Runner self-hosted (`integracao-azure.yml`) | Só `schedule`/`workflow_dispatch` da `main` deste repositório, `permissions: {}` no workflow; o runner precisa do hook `pre-job.sh`, de runner efêmero e das configurações do GitHub descritas no [CI/CD](../.github/workflows/README.md#️-integracao-azureyml) |
 
 Vulnerabilidades: não abra *issue* pública; escreva para [roberto@roberto.inf.br](mailto:roberto@roberto.inf.br).

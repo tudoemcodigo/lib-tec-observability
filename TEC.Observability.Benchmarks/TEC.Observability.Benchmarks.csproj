@@ -18,8 +18,7 @@
     <PackageReference Include="BenchmarkDotNet" />
   </ItemGroup>
 
-  <!-- O TestHost acompanha a versão do ASP.NET Core de cada TFM (pipeline HTTP em memória, sem sockets). -->
-  <!-- Versão por runtime (8.0.x no net8.0, 10.0.x no net10.0) definida no Directory.Packages.props -->
+  <!-- O TestHost acompanha a versão do ASP.NET Core do alvo (pipeline HTTP em memória, sem sockets; versão no Directory.Packages.props). -->
   <ItemGroup>
     <PackageReference Include="Microsoft.AspNetCore.TestHost" />
   </ItemGroup>

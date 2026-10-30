@@ -1,6 +1,7 @@
 using System.Diagnostics;
 using OpenTelemetry;
 using OpenTelemetry.Context.Propagation;
+using TEC.Observability.Internal;
 
 namespace TEC.Observability.Tracing;
 
@@ -16,22 +17,9 @@ internal sealed class BaggageHostPolicy
     private static readonly BaggageHostPolicy None = new([]);
     private static volatile BaggageHostPolicy? _default;
 
-    private readonly bool _any;
-    private readonly HashSet<string> _hosts = new(StringComparer.OrdinalIgnoreCase);
-    private readonly List<string> _suffixes = [];
+    private readonly HostPatterns _hosts;
 
-    public BaggageHostPolicy(IEnumerable<string> patterns)
-    {
-        foreach (var pattern in patterns.Select(p => p.Trim()))
-        {
-            if (pattern == "*")
-                _any = true;
-            else if (pattern.StartsWith("*.", StringComparison.Ordinal))
-                _suffixes.Add(pattern[1..]); // ".svc.cluster.local"
-            else
-                _hosts.Add(pattern);
-        }
-    }
+    public BaggageHostPolicy(IEnumerable<string> patterns) => _hosts = new HostPatterns(patterns);
 
     /// <summary>Política da requisição atual; <c>null</c> fora de uma requisição atendida pelo middleware.</summary>
     public static BaggageHostPolicy? Current
@@ -51,18 +39,18 @@ internal sealed class BaggageHostPolicy
     public static BaggageHostPolicy Effective => Current ?? Default ?? None;
 
     /// <summary><c>true</c> quando o host pode receber o Baggage.</summary>
-    public bool Allows(string host)
+    public bool Allows(string host) => _hosts.Matches(host);
+
+    /// <summary>
+    /// Tira da requisição os cabeçalhos de Baggage já presentes (<c>baggage</c> e <c>Correlation-Context</c>). Chamado pelos
+    /// propagadores quando o destino não é permitido: num redirecionamento automático o <see cref="HttpClient"/> reaproveita a
+    /// mesma <see cref="HttpRequestMessage"/>, e um cabeçalho que não foi escrito pelo próprio <c>DiagnosticsHandler</c> (escrito
+    /// à mão pela aplicação, por um handler ou por outro propagador) seguiria para o host do redirecionamento.
+    /// </summary>
+    internal static void RemoveBaggageHeaders(HttpRequestMessage request)
     {
-        if (_any || _hosts.Contains(host))
-            return true;
-
-        foreach (var suffix in _suffixes)
-        {
-            if (host.Length > suffix.Length && host.EndsWith(suffix, StringComparison.OrdinalIgnoreCase))
-                return true;
-        }
-
-        return false;
+        request.Headers.Remove(HostFilteringDistributedContextPropagator.BaggageHeader);
+        request.Headers.Remove(HostFilteringDistributedContextPropagator.CorrelationContextHeader);
     }
 }
 
@@ -70,6 +58,12 @@ internal sealed class BaggageHostPolicy
 /// Envolve o propagador padrão do OpenTelemetry e deixa de escrever o cabeçalho <c>baggage</c> em requisições HTTP para hosts
 /// fora da <see cref="BaggageHostPolicy"/> da requisição atual. O <c>traceparent</c> e a extração não mudam.
 /// </summary>
+/// <remarks>
+/// Redirecionamentos: no <see cref="SocketsHttpHandler"/> o <c>DiagnosticsHandler</c> fica dentro do tratamento de
+/// redirecionamento, então a injeção roda de novo a cada salto, com a URL do novo destino; os cabeçalhos que ele escreveu no salto
+/// anterior são apagados antes. Para um destino fora da política, este propagador também apaga o Baggage que já estava na
+/// requisição (<see cref="BaggageHostPolicy.RemoveBaggageHeaders"/>), escrito por quem quer que seja.
+/// </remarks>
 internal sealed class HostFilteringPropagator(TextMapPropagator inner) : TextMapPropagator
 {
     private const string BaggageHeader = "baggage";
@@ -105,12 +99,13 @@ internal sealed class HostFilteringPropagator(TextMapPropagator inner) : TextMap
 
     public override void Inject<T>(PropagationContext context, T carrier, Action<T, string, string> setter)
     {
-        if (carrier is not HttpRequestMessage { RequestUri: { IsAbsoluteUri: true } uri } || BaggageHostPolicy.Effective.Allows(uri.IdnHost))
+        if (carrier is not HttpRequestMessage { RequestUri: { IsAbsoluteUri: true } uri } request || BaggageHostPolicy.Effective.Allows(uri.IdnHost))
         {
             inner.Inject(context, carrier, setter);
             return;
         }
 
+        BaggageHostPolicy.RemoveBaggageHeaders(request);
         inner.Inject(context, carrier, (target, name, value) =>
         {
             if (!string.Equals(name, BaggageHeader, StringComparison.OrdinalIgnoreCase))
@@ -131,20 +126,22 @@ internal sealed class HostFilteringPropagator(TextMapPropagator inner) : TextMap
 /// </remarks>
 internal sealed class HostFilteringDistributedContextPropagator(DistributedContextPropagator inner) : DistributedContextPropagator
 {
-    private const string BaggageHeader = "baggage";
-    private const string CorrelationContextHeader = "Correlation-Context";
+    internal const string BaggageHeader = "baggage";
+    internal const string CorrelationContextHeader = "Correlation-Context";
 
     public override IReadOnlyCollection<string> Fields => inner.Fields;
 
     public override void Inject(Activity? activity, object? carrier, PropagatorSetterCallback? setter)
     {
-        if (setter is null || carrier is not HttpRequestMessage { RequestUri: { IsAbsoluteUri: true } uri }
+        if (setter is null || carrier is not HttpRequestMessage { RequestUri: { IsAbsoluteUri: true } uri } request
             || BaggageHostPolicy.Effective.Allows(uri.IdnHost))
         {
             inner.Inject(activity, carrier, setter);
             return;
         }
 
+        // Chamado a cada salto de redirecionamento: o Baggage de um salto permitido não segue para um destino fora da política.
+        BaggageHostPolicy.RemoveBaggageHeaders(request);
         inner.Inject(activity, carrier, (target, name, value) =>
         {
             if (!IsBaggageField(name))

@@ -47,7 +47,7 @@ sequenceDiagram
 |---|---|---|
 | Traces | Spans de servidor (ASP.NET Core) e de cliente (`HttpClient`), fontes com o nome do `ServiceName`, `TEC.*` e as registradas com `AddActivitySource` | A instrumentação padrão é ligada pelos exportadores `Otlp`, `Console`, `LogFile` e próprios que chamam `AddStandardInstrumentation`; o `Azure` usa a da distro |
 | Métricas | ASP.NET Core, `HttpClient`, runtime do .NET (`AddRuntimeInstrumentation`), medidores do `ServiceName`, `TEC.*` e os de `AddMeter` | — |
-| Logs | Todo `ILogger` da aplicação, com escopos e mensagem formatada | Ligados ao trace (`trace_id`/`span_id`) e ao escopo `correlation.id` |
+| Logs | Todo `ILogger` da aplicação, com mensagem formatada; escopos só com `IncludeScopes` e pelas chaves de `AllowedScopeKeys` | Ligados ao trace (`trace_id`/`span_id`); com `IncludeScopes`, também ao atributo `correlation.id` |
 
 Com `Provider: None` não há pipeline próprio: as fontes, os medidores e a redação são registrados em qualquer provedor de
 OpenTelemetry que outra biblioteca montar no container (ex.: Aspire `ServiceDefaults`).
@@ -148,7 +148,7 @@ Atributos do recurso, lidos das opções efetivas quando o provedor de telemetri
 | Rotas de `IgnoredPaths` (padrão `/health`, `/health/live`, `/health/ready`, `/swagger`) | Filtro da instrumentação ASP.NET Core, comparado por **segmento** (`/health` ignora `/health/live`, não `/healthcare`) |
 | `LiveEndpoint` e `ReadyEndpoint` configurados | Sempre ignorados (mesmo fora de `IgnoredPaths`) |
 | Sondagens HTTP dos health checks (`AddSsoHealthCheck`, `AddExternalServiceHealthCheck`) | Marcadas na requisição e filtradas na instrumentação do `HttpClient` |
-| Chamadas do `HttpClient` a cofres de segredos: Azure (`*.vault.azure.net`, `*.vault.azure.cn`, `*.vault.usgovcloudapi.net`, `*.vault.microsoftazure.de`, `*.managedhsm.azure.net`), AWS Secrets Manager (`secretsmanager.*.amazonaws.com`), GCP Secret Manager (`secretmanager.googleapis.com`), HashiCorp Vault (`/v1/secret`, `/v1/sys`) e Infisical (`/api/v1/secrets`, `/api/v2/secrets`) | A URL traria nome e versão do segredo; as operações continuam visíveis pelos spans `TEC.Vault` |
+| Chamadas do `HttpClient` a cofres de segredos: Azure (`*.vault.azure.net`, `*.vault.azure.cn`, `*.vault.usgovcloudapi.net`, `*.vault.microsoftazure.de`, `*.managedhsm.azure.net`), AWS Secrets Manager (`secretsmanager.*.amazonaws.com`), GCP Secret Manager (`secretmanager.googleapis.com`) e os hosts de `SecretStoreHosts` (cofres próprios: HashiCorp Vault, Infisical...). O caminho sozinho não conta | A URL traria nome e versão do segredo; as operações continuam visíveis pelos spans da biblioteca do cofre (ex.: `TEC.Vault`) |
 
 Os filtros são compostos com os de quem também registrou a instrumentação (distro do Azure, `ServiceDefaults`, o próprio
 serviço): nenhum sobrescreve o outro. Com `Provider: None`, os filtros de rota da biblioteca não são aplicados (valem os

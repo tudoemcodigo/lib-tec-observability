@@ -27,7 +27,7 @@
 
 ```mermaid
 flowchart LR
-    T["dotnet test"] --> U["TEC.Observability.Tests<br/><sub>371 · net10.0 · net8.0 · sem ICU</sub>"]
+    T["dotnet test"] --> U["TEC.Observability.Tests<br/><sub>499 · net10.0 · sem ICU</sub>"]
     T --> AZ["TEC.Observability.Azure.Tests"]
     T --> L["TEC.Observability.LoadTests"]
     AZ --> AU["29 unitários<br/><sub>processo isolado</sub>"]
@@ -40,7 +40,7 @@ flowchart LR
 
 | Projeto | Categoria | Conteúdo | Testes |
 |---|---|---|---:|
-| `TEC.Observability.Tests` | *(sem categoria)* | Unidade, regressão e segurança rápida do pacote base (sem o pacote Azure) | 371 por alvo |
+| `TEC.Observability.Tests` | *(sem categoria)* | Unidade, regressão e segurança rápida do pacote base (sem o pacote Azure) | 499 |
 | `TEC.Observability.Tests` | `Seguranca-Pesada` | Fuzzing estendido (`[Explicit]`) | 1 |
 | `TEC.Observability.Azure.Tests` | *(sem categoria)* | Exportador do Azure Monitor e telemetria em processo isolado | 29 |
 | `TEC.Observability.Azure.Tests` | `Integracao` | Envio real ao Application Insights de testes e consulta KQL | 3 |
@@ -63,7 +63,7 @@ flowchart LR
 ### Rodar localmente
 
 ```bash
-# Unitários do pacote base (os dois alvos; precisa do runtime do .NET 8)
+# Unitários do pacote base
 dotnet test --project TEC.Observability.Tests -c Release
 
 # Unitários do pacote Azure
@@ -72,7 +72,7 @@ dotnet test --project TEC.Observability.Azure.Tests -c Release --treenode-filter
 # Carga rápida (como no job rapida do performance.yml)
 dotnet test --project TEC.Observability.LoadTests -c Release --treenode-filter "/*/*/*/*[Category=Carga-CI]"
 
-# Só um alvo / uma classe (filtro /assembly/namespace/classe/teste)
+# Só uma classe (filtro /assembly/namespace/classe/teste)
 dotnet test --project TEC.Observability.Tests -c Release -f net10.0 --treenode-filter "/*/*/FuzzingTests/*"
 
 # Sem ICU, como na matriz do CI
@@ -90,10 +90,12 @@ DOTNET_SYSTEM_GLOBALIZATION_INVARIANT=1 dotnet test --project TEC.Observability.
 | `ConfigurationTests` | base | Binding, padrões, validação na subida, `IOptionsMonitor`/`IOptionsSnapshot`, provedor tardio, `OTEL_SERVICE_NAME`, versão do assembly de entrada, nomes de `Provider`, filtro de rotas, endpoint OTLP, URL de descoberta |
 | `ExporterTests` | base | Exportador próprio ligado pelo nome, não ligado com outro `Provider`, `Provider` sem exportador, nomes embutidos/inválidos/repetidos |
 | `HealthCheckTests` | base | Endpoints em `TestServer`, JSON, banco (SQLite e driver falso que ignora cancelamento), SSO e serviço externo simulados, `Degraded`, verificação travada, 503 no encerramento, `self` do Aspire, prazo global |
-| `LogFileExporterTests` | base | Formato da linha, quebras de linha e exceção recuadas sem forjar registro, nível mínimo, troca por tamanho e por dia, retenção só dos arquivos do próprio serviço, nome seguro, opções inválidas, vários destinos e exportador próprio juntos, `None` combinado recusado |
+| `LogFileExporterTests` | base | Formato da linha, quebras de linha e exceção recuadas sem forjar registro, nível mínimo, troca por tamanho e por dia, retenção só dos arquivos do próprio serviço e da própria instância (`InstanceName`), escopos só com `IncludeScopes` e pela lista, nome seguro, opções inválidas, vários destinos e exportador próprio juntos, `None` combinado recusado |
 | `TelemetryTests` | base | Correlation id e tracing de ponta a ponta com exportador em memória, recurso, fontes `TEC.*`, `None` com OpenTelemetry de outra biblioteca, `OTEL_EXPORTER_OTLP_*`, exportação OTLP |
 | `SecurityTests` | base | Regressões: detalhes do JSON por ambiente, Baggage só para hosts permitidos, sondagens e cofres fora dos traces, `ManagementPort`, TLS dos cabeçalhos OTLP, redação de query string e de spans de cofre |
 | `Security/SensitiveDataRedactionTests` | base | Nomes sensíveis, texto livre em tempo linear, mensagem refeita pelo modelo como o `ILogger`, atributos de span e URL de saída, arquivo de log (controles escapados, escopos e exceção redigidos), JSON de health (`data` sensível, textos cortados), cache de health com `TimeProvider` injetado, tag vazia recusada no registro |
+| `Security/RedactionHardeningTests` | base | Nomes sensíveis em português e `*Key` sem falso positivo óbvio, `AdditionalSensitiveKeys` (inclusive vindo de configuração tardia), pares `chave=valor` em tempo linear (contagem de caracteres percorridos, sem cronômetro), escopos de log por lista e redigidos, cofres só pelo host (API de terceiro com caminho de cofre continua no trace), correlation id pelo Baggage do `Activity` com `Provider: None`, Baggage fora do redirecionamento para host não permitido, liveness sem inicializador estático |
+| `ObservabilityIssueRegressionTests` | base | Regressões pontuais: flag `Recorded` preservada pelo `ContextPropagationListener`; URLs `amqp`/`mongodb`/`postgres`, esquemas de `Authorization` e pares `[chave, valor]` na redação de texto livre. O terceiro confere que o `LogRedactionProcessor` redige o modelo (`{OriginalFormat}`), o `Body` e a mensagem formatada |
 | `AzureMonitorExporterTests` | Azure | Ativação por `Provider`, opções da distro, connection string tardia e pela variável, validação, credencial só Workload/Managed Identity fora de `Development` |
 | `IsolatedTelemetryTests` | Azure | Em processo filho (um host por processo): query string redigida com `Azure`, span do Key Vault sem nome e versão, `IgnoredPaths` com `Azure`, sampler efetivo |
 
@@ -150,7 +152,7 @@ TEC_CARGA_SOAK_SEGUNDOS=600 TEC_CARGA_RELATORIOS=./relatorios \
 
 ```bash
 dotnet run -c Release --project TEC.Observability.Benchmarks -f net10.0 -- --filter "*"
-dotnet run -c Release --project TEC.Observability.Benchmarks -f net10.0 -- --filter "*Redaction*" --runtimes net8.0 net10.0
+dotnet run -c Release --project TEC.Observability.Benchmarks -f net10.0 -- --filter "*Redaction*"
 ```
 
 Resultados em `BenchmarkDotNet.Artifacts/results`. Compare sempre na mesma máquina.
@@ -194,7 +196,7 @@ dotnet test --project TEC.Observability.Azure.Tests -f net10.0 --treenode-filter
 
 | Workflow | Testes |
 |---|---|
-| `ci.yml` (PR, push na `main`, semanal, manual) | Unitários dos dois projetos em `net10.0`/`net8.0`/sem ICU; integração com o Application Insights de testes via OIDC **só na `main`** (em PR, pula); no push na `main`, publica a prévia |
+| `ci.yml` (PR, push na `main`, semanal, manual) | Unitários dos dois projetos em `net10.0` e `net10.0` sem ICU; integração com o Application Insights de testes via OIDC **só na `main`** (em PR, pula); no push na `main`, publica a prévia |
 | `release.yml` | Só os unitários (matriz + cobertura), antes da tag |
 | `performance.yml` (só manual) | `suite` = `pesadas` (padrão: `Carga-Pesada` + `Seguranca-Pesada` com parâmetros), `rapida` (`Carga-CI`) ou `todas`; benchmarks opcionais |
 | `integracao-azure.yml` (domingo, manual) | Integração em runner self-hosted com identidade gerenciada real (`TEC_TESTES_OBSERVABILITY_IDENTIDADE=workload`) |
@@ -246,7 +248,6 @@ Detalhes: [.github/workflows/README.md](../.github/workflows/README.md).
 | `Sem credencial de desenvolvedor para ... (execute 'az login --tenant <tenant>').` | Sem credencial do Entra ID para ingestão ou consulta | `az login --tenant <tenant-id>` |
 | `Sem Workload/Managed Identity disponível para ...` | `TEC_TESTES_OBSERVABILITY_IDENTIDADE=workload` fora do Azure | Rode no runner self-hosted ou tire a variável |
 | 0 testes executados (código 5) | `-nologo` no `dotnet test` ou filtro sem casar | Tire o `-nologo`; confira o filtro |
-| Testes `net8.0` não rodam | Runtime .NET 8 / ASP.NET Core 8 ausente | Instale ou use `-f net10.0` |
 | Pesados não rodam | `[Explicit]` | Filtre pela categoria (`Carga-Pesada`, `Seguranca-Pesada`) |
 | Teste de carga conta spans a mais | Outro host no mesmo processo | Mantenha `[NotInParallel]`; leia o exportador em memória por `ToArray()` |
 

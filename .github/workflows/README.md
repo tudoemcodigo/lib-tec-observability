@@ -32,14 +32,14 @@
 flowchart LR
     subgraph PR["🔀 ci.yml → dotnet-ci.yml (PR / push na main)"]
         direction LR
-        CV["convenções"] ~~~ BP["build + pack"] ~~~ U["unitários<br/>net10.0 · net8.0 · sem ICU"]
+        CV["convenções"] ~~~ BP["build + pack"] ~~~ U["unitários<br/>net10.0 · sem ICU"]
         IT["integração<br/><sub>Application Insights de testes<br/>só na main (OIDC)</sub>"] ~~~ CQ["CodeQL"]
         OK["✅ ci-ok"]
         OK -- "só push na main" --> PV["📦 publicar-previa<br/><sub>X.Y.Z-preview.N · 2 pacotes</sub>"]
     end
     subgraph REL["⌨️ release.yml → dotnet-release.yml"]
         direction LR
-        V["validar versão<br/><sub>X.Y.Z ou X.Y.Z-rc.N</sub>"] --> G["convenções · pack ·<br/>unit ×3 + cobertura · CodeQL"] --> TAG["🏷️ tag + Release"] --> PUB["📦 GitHub Packages<br/>2 pacotes"]
+        V["validar versão<br/><sub>X.Y.Z ou X.Y.Z-rc.N</sub>"] --> G["convenções · pack ·<br/>unit ×2 + cobertura · CodeQL"] --> TAG["🏷️ tag + Release"] --> PUB["📦 GitHub Packages<br/>2 pacotes"]
     end
     subgraph PERF["⌨️ performance.yml (só manual)"]
         RA["rapida<br/><sub>Carga-CI</sub>"] ~~~ HV["pesados<br/><sub>Carga-Pesada + Seguranca-Pesada</sub>"] ~~~ BM["benchmarks (opcional)<br/><sub>dotnet-benchmark.yml</sub>"]
@@ -56,7 +56,7 @@ flowchart LR
 | `schedule` segunda 06:00 UTC / manual | `ci.yml` | O mesmo na `main`, **com** o Application Insights de testes via OIDC; CodeQL e auditoria com regras e vulnerabilidades novas | ❌ |
 | `schedule` domingo 06:00 UTC / manual | `integracao-azure.yml` | Integração com identidade gerenciada real (runner self-hosted), se `TEC_RUNNER_AZURE=true` | ❌ |
 | Manual (**Performance**) | `performance.yml` | Input `suite`: `pesadas` (padrão, `Carga-Pesada` + `Seguranca-Pesada`), `rapida` (`Carga-CI`) ou `todas`; parâmetros e, se pedido, benchmarks | ❌ |
-| Manual (**Publicar versão**) | `release.yml` | Convenções, pack, unitários ×3 + cobertura e CodeQL, depois tag, Release e push dos 2 pacotes | ✅ `X.Y.Z` ou `-rc.N` |
+| Manual (**Publicar versão**) | `release.yml` | Convenções, pack, unitários ×2 (`net10.0` e sem ICU) + cobertura e CodeQL, depois tag, Release e push dos 2 pacotes | ✅ `X.Y.Z` ou `-rc.N` |
 
 Os testes de carga e o `Seguranca-Pesada` não rodam no PR nem na publicação: tempo de parede em runner compartilhado é
 ruidoso e não pode bloquear PR nem versão.
@@ -71,9 +71,9 @@ ruidoso e não pode bloquear PR nem versão.
 
 | Arquivo | Função |
 |---|---|
-| [`ci.yml`](ci.yml) | Validação de PR, do push na `main` (com publicação da prévia) e semanal na `main`, com `dotnet-ci.yml@v2` |
-| [`release.yml`](release.yml) | Publicação de versão estável ou `-rc.N`, com `dotnet-release.yml@v2` |
-| [`performance.yml`](performance.yml) | Testes de carga só sob demanda, manual (`dotnet-test.yml@v2`), e benchmarks (`dotnet-benchmark.yml@v2`) |
+| [`ci.yml`](ci.yml) | Validação de PR, do push na `main` (com publicação da prévia) e semanal na `main`, com `dotnet-ci.yml@v1` |
+| [`release.yml`](release.yml) | Publicação de versão estável ou `-rc.N`, com `dotnet-release.yml@v1` |
+| [`performance.yml`](performance.yml) | Testes de carga só sob demanda, manual (`dotnet-test.yml@v1`), e benchmarks (`dotnet-benchmark.yml@v1`) |
 | [`integracao-azure.yml`](integracao-azure.yml) | Integração com identidade gerenciada real, em runner self-hosted (job próprio, sem workflow reutilizável) |
 | [`../actionlint.yaml`](../actionlint.yaml) | Declara o rótulo `azure` do runner self-hosted para o actionlint |
 | [`../dependabot.yml`](../dependabot.yml) · [`../zizmor.yml`](../zizmor.yml) | Canônicos do tec-workflows (atualizações semanais com cooldown; auditoria dos workflows) |
@@ -88,7 +88,7 @@ ruidoso e não pode bloquear PR nem versão.
 | `private-feed` | `true` (o `TEC.Vault.AzureKeyVault` dos testes vem do `tec-interno`) |
 | `unit-tests` | `TEC.Observability.Tests` (projeto inteiro: os `[Explicit]` ficam de fora) e `TEC.Observability.Azure.Tests /*/*/*/*[Category!=Integracao]` |
 | `integration-tests` | `TEC.Observability.Azure.Tests /*/*/*/*[Category=Integracao]` |
-| `azure-client-id` / `azure-tenant-id` | `vars.AZURE_CLIENT_ID` / `vars.TEC_TESTES_TENANT_ID` |
+| `azure-client-id` / `azure-tenant-id` | `vars.AZURE_CLIENT_ID` só se `vars.TEC_ENABLE_AZURE_INTEGRATION` estiver definida (senão vazio, e o login OIDC não acontece) / `vars.TEC_TESTES_TENANT_ID` |
 | `azure-env` | `TEC_TESTES_VAULT_URI` e `TEC_TESTES_TENANT_ID`, aplicados só depois do login OIDC |
 | secret `test-env` | `TEC_TESTES_OBSERVABILITY_APPINSIGHTS_CONNECTION_STRING` ← secret `TEC_OBSERVABILITY_APPINSIGHTS_CONNECTION_STRING` (opcional) |
 
@@ -117,10 +117,12 @@ prévias saem do `ci.yml` no push na `main`).
 | `version` | `inputs.versao` |
 | `solution` / `private-feed` / `unit-tests` | Os mesmos do `ci.yml` |
 
-Ordem: validar a versão → portões em paralelo (convenções, pack, unitários ×3 com relatório de cobertura, CodeQL) → tag
+Ordem: validar a versão → portões em paralelo (convenções, pack, unitários ×2 com relatório de cobertura, CodeQL) → tag
 `vX.Y.Z` + GitHub Release → push de `TEC.Observability` e `TEC.Observability.Azure` (mesma versão) no GitHub Packages.
 Sem integração (já passou no PR e no push da `main`) e sem carga. Nada é publicado se um portão falhar. Permissões:
-`contents: write` (tag/Release), `packages: write`, `id-token: write` (exigido pelo workflow de testes reutilizável).
+`contents: write` (tag/Release), `packages: write`, `id-token: write` (exigido pelo workflow de testes reutilizável),
+`attestations: write` (atestado de proveniência), `security-events: write` (CodeQL) e `actions`, `checks` e `pull-requests`
+em `read` (CodeQL e conferência do `ci-ok` e dos PRs abertos).
 
 ---
 
@@ -203,6 +205,7 @@ repositório, não pelo código**.
 
 | Nome | Tipo | Onde | Uso |
 |---|---|---|---|
+| `TEC_ENABLE_AZURE_INTEGRATION` | Variable | Repositório | Qualquer valor não vazio liga o login OIDC do `ci.yml` (sem ela, `azure-client-id` fica vazio e a integração se pula) |
 | `AZURE_CLIENT_ID` | Variable | Organização | Identidade de testes para o login OIDC (credencial federada `repo:tudoemcodigo/lib-tec-observability:ref:refs/heads/main`) |
 | `TEC_TESTES_TENANT_ID` | Variable | Organização | Tenant do login e dos testes |
 | `TEC_TESTES_VAULT_URI` | Variable | Organização | Cofre de testes (segredo `tec-testes-appinsights-conexao`) |

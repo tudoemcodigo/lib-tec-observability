@@ -59,7 +59,7 @@ pacote, vira dependência com a mesma versão.
 
 | Item | Detalhe |
 |---|---|
-| SDK | .NET 10 (`global.json`: `10.0.401`, `rollForward: latestPatch`) e os runtimes .NET 8 e ASP.NET Core 8 para os testes em `net8.0` |
+| SDK | .NET 10 (`global.json`: `10.0.402`, `rollForward: latestPatch`); o alvo único é `net10.0` |
 | Feed `tec-interno` | Para o `TEC.Vault.AzureKeyVault` em modo pacote, o padrão: necessário para compilar a solução inteira (PAT *classic* com `read:packages`; o GitHub Packages exige token mesmo para pacote público) |
 | Azure CLI | Só para a integração local (`az login`) |
 | Docker | Não é necessário |
@@ -153,7 +153,6 @@ tec-workflows e sincronize (`tec-workflows/scripts/sync-template.sh TEC.Observab
 | `NU1004` / `NU1403` no restore | Lock file desatualizado | `dotnet restore TEC.Observability.slnx --force-evaluate` e commit |
 | `NU1101` para `TEC.Vault.AzureKeyVault` | Modo pacote sem a origem `tec-interno` ou pacote não publicado | Configure o feed ou use o modo local (`-p:TecUseLocalProjects=true`) com o `TEC.Vault` clonado ao lado |
 | `NU1301` (401) no `tec-interno` | Token do GitHub Packages ausente ou expirado: o restore padrão consulta o feed por causa do `TEC.Vault.AzureKeyVault` dos testes do Azure | Renove o token ou use o modo local (`-p:TecUseLocalProjects=true`) |
-| Testes `net8.0` não sobem (`Microsoft.AspNetCore.App 8.0` não encontrado) | Só o runtime .NET 8 instalado, sem o ASP.NET Core 8 | Instale o ASP.NET Core Runtime 8 ou rode só `-f net10.0` localmente (o CI roda os dois) |
 | `Use <TecReference ...> em vez de PackageReference` | `PackageReference` para um `TEC.*` | Use `TecReference` |
 | Job "Convenções" falha | Arquivo canônico alterado | Desfaça e altere no tec-workflows |
 

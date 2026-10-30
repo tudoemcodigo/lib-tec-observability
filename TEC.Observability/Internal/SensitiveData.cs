@@ -8,24 +8,68 @@ namespace TEC.Observability.Internal;
 
 /// <summary>
 /// Nomes de atributo (de log ou de span) que indicam valor sensível: senha, segredo, token, chave de API, connection string,
-/// cabeçalho de autorização, cookie, credencial, id de sessão, JWT, chave de assinatura de API. A comparação ignora maiúsculas e os
-/// separadores <c>_</c>, <c>-</c>, <c>.</c>, <c>:</c> e espaço, aceita o plural com <c>s</c> e olha o <b>fim</b> do nome:
-/// <c>DbPassword</c>, <c>access_token</c>, <c>Secrets</c>, <c>.AspNetCore.Cookies</c>, <c>http.request.header.authorization</c>
-/// e <c>db.connection_string</c> casam; <c>TokenCount</c> e <c>PasswordPolicy</c> não.
+/// cabeçalho de autorização, cookie, credencial, id de sessão, JWT, chave de assinatura de API, em inglês e em português. A
+/// comparação ignora maiúsculas, acentos (<c>á</c>, <c>ç</c>, <c>õ</c>...) e os separadores <c>_</c>, <c>-</c>, <c>.</c>,
+/// <c>:</c> e espaço, aceita o plural com <c>s</c> e olha o <b>fim</b> do nome: <c>DbPassword</c>, <c>access_token</c>,
+/// <c>Secrets</c>, <c>.AspNetCore.Cookies</c>, <c>http.request.header.authorization</c>, <c>db.connection_string</c>,
+/// <c>NovaSenha</c> e <c>ChaveDeAcesso</c> casam; <c>TokenCount</c> e <c>PasswordPolicy</c> não.
 /// </summary>
-/// <remarks>Sem alocação: roda para cada atributo de cada log e span exportado.</remarks>
+/// <remarks>
+/// <para>
+/// Critério dos nomes terminados em <c>Key</c>: só casam com um qualificador que indica segredo na frente (<c>ApiKey</c>,
+/// <c>SecretKey</c>, <c>SigningKey</c>, <c>EncryptionKey</c>, <c>MasterKey</c>...). <c>Key</c> sozinho e nomes comuns como
+/// <c>PartitionKey</c>, <c>CacheKey</c>, <c>IdempotencyKey</c>, <c>RoutingKey</c>, <c>PublicKey</c>, <c>PrimaryKey</c> e
+/// <c>ForeignKey</c> não casam: a chave de partição ou de cache é dado de diagnóstico, não segredo.
+/// </para>
+/// <para>
+/// Português: em nomes compostos o substantivo vem primeiro (<c>SenhaAtual</c>, <c>SegredoCliente</c>), então <c>senha</c>,
+/// <c>segredo</c> e <c>credencial</c> casam também no <b>início</b> do nome (<c>SenhaExpirada</c> é redigido junto; valores
+/// <c>bool</c> nunca são redigidos). <c>chave</c> só casa como nome inteiro (<c>Chave</c>, <c>chaves</c>) ou com um qualificador
+/// de segredo no fim (<c>ChaveDeAcesso</c>, <c>chave_privada</c>, <c>ChaveApi</c>, <c>ChavePix</c>): <c>ChaveNfe</c>,
+/// <c>ChavePrimaria</c> e <c>ChaveCache</c> não.
+/// </para>
+/// <para>
+/// Nomes próprios do serviço entram por <c>Observability:AdditionalSensitiveKeys</c> (<see cref="Register"/>), com o mesmo
+/// critério das terminações embutidas. Sem alocação na comparação: roda para cada atributo de cada log e span exportado.
+/// </para>
+/// </remarks>
 internal static class SensitiveKeys
 {
-    /// <summary>Terminações (já normalizadas: minúsculas, sem separadores) que tornam o nome sensível.</summary>
+    /// <summary>Tamanho mínimo e máximo (normalizado) de um nome de <c>AdditionalSensitiveKeys</c>.</summary>
+    internal const int MinAdditionalKeyLength = 3;
+    internal const int MaxAdditionalKeyLength = 128;
+
+    /// <summary>Teto de nomes adicionais no processo (a lista é unida a cada recarga da configuração).</summary>
+    internal const int MaxAdditionalKeys = 256;
+
+    /// <summary>Terminações (já normalizadas: minúsculas, sem acento, sem separadores) que tornam o nome sensível.</summary>
     private static readonly string[] Suffixes =
     [
-        "password", "passwd", "passphrase", "secret", "token", "apikey", "accesskey", "accountkey", "privatekey", "connectionstring",
-        "authorization", "credential", "cookie", "signature", "sessionid", "jwt", "subscriptionkey",
-        "cardnumber", "creditcard", "cvv", "cvc", "functionskey", "assertion", "instrumentationkey",
+        "password", "passwd", "passphrase", "secret", "token", "connectionstring",
+        "authorization", "credential", "cookie", "signature", "sessionid", "jwt",
+        "cardnumber", "creditcard", "cvv", "cvc", "assertion",
+        // *Key só com qualificador de segredo (ver remarks): ApiKey, SecretKey, SigningKey...
+        "apikey", "accesskey", "accountkey", "privatekey", "subscriptionkey", "functionskey", "instrumentationkey",
+        "secretkey", "signingkey", "signkey", "encryptionkey", "decryptionkey", "masterkey", "hmackey", "sharedkey", "clientkey",
+        "authkey", "authenticationkey", "sessionkey", "cryptokey", "privkey", "saskey", "storagekey", "appkey", "licensekey",
+        // Português (sem acento: a comparação remove os acentos do nome)
+        "senha", "palavrapasse", "segredo", "credencial", "credenciais",
+        "chaveacesso", "chavedeacesso", "chaveapi", "chavedaapi", "chavedeapi", "chaveprivada", "chavesecreta",
+        "chaveassinatura", "chavedeassinatura", "chavecriptografia", "chavedecriptografia", "chavemestra", "chavepix",
+        "tokenacesso", "tokendeacesso", "tokenatualizacao", "tokendeatualizacao", "tokenrenovacao", "tokenderenovacao",
+        "codigoseguranca", "codigodeseguranca", "numerocartao", "numerodocartao", "cartaocredito", "cartaodecredito",
     ];
 
+    /// <summary>Inícios (normalizados) que tornam o nome sensível: substantivos que, em português, vêm antes do qualificador.</summary>
+    private static readonly string[] Prefixes = ["senha", "segredo", "credencial"];
+
     /// <summary>Nomes curtos sensíveis só quando são o nome inteiro (como sufixo casariam com nomes comuns).</summary>
-    private static readonly string[] ExactNames = ["pwd", "sig", "otp", "pin", "cpf", "cnpj", "rg"];
+    private static readonly string[] ExactNames = ["pwd", "sig", "otp", "pin", "cpf", "cnpj", "rg", "chave"];
+
+    private static readonly Lock RegisterLock = new();
+
+    /// <summary>Terminações de <c>AdditionalSensitiveKeys</c> (normalizadas), trocadas por cópia: a leitura não usa lock.</summary>
+    private static volatile string[] _additional = [];
 
     /// <summary><c>true</c> quando o nome indica valor sensível (no singular ou no plural com <c>s</c>: <c>Cookies</c>, <c>Secrets</c>).</summary>
     public static bool IsSensitive(ReadOnlySpan<char> key)
@@ -43,26 +87,107 @@ internal static class SensitiveKeys
         return last > 0 && key[last] is 's' or 'S' && Matches(key[..last]);
     }
 
+    /// <summary>
+    /// Acrescenta nomes sensíveis do serviço (<c>Observability:AdditionalSensitiveKeys</c>), com o mesmo critério das terminações
+    /// embutidas. Vale para o processo inteiro (a redação é estática, como os propagadores) e só soma: com vários hosts no mesmo
+    /// processo, ou a cada recarga da configuração, vale a união das listas — esconder a mais é o lado seguro. Nomes inválidos
+    /// (recusados na validação da subida) são ignorados aqui.
+    /// </summary>
+    internal static void Register(IEnumerable<string?>? names)
+    {
+        if (names is null)
+            return;
+
+        lock (RegisterLock)
+        {
+            var current = _additional;
+            List<string>? added = null;
+            foreach (var name in names)
+            {
+                if (Normalize(name) is not { } normalized || Array.IndexOf(current, normalized) >= 0 || added?.Contains(normalized) == true)
+                    continue;
+                if (current.Length + (added?.Count ?? 0) >= MaxAdditionalKeys)
+                    break;
+                (added ??= []).Add(normalized);
+            }
+
+            if (added is not null)
+                _additional = [.. current, .. added];
+        }
+    }
+
+    /// <summary>
+    /// Forma normalizada de um nome adicional (minúsculas, sem acento, sem separadores), ou <c>null</c> quando ele não é aceito:
+    /// vazio, com caractere que não é letra, dígito ou separador, ou fora de <see cref="MinAdditionalKeyLength"/> a
+    /// <see cref="MaxAdditionalKeyLength"/> caracteres (um nome curto demais, como <c>id</c>, redigiria quase tudo).
+    /// </summary>
+    internal static string? Normalize(string? name)
+    {
+        if (string.IsNullOrWhiteSpace(name) || name.Length > MaxAdditionalKeyLength * 2)
+            return null;
+
+        var builder = new StringBuilder(name.Length);
+        foreach (var c in name)
+        {
+            if (IsSeparator(c))
+                continue;
+            if (!char.IsLetterOrDigit(c))
+                return null;
+            builder.Append(Fold(c));
+        }
+
+        return builder.Length is >= MinAdditionalKeyLength and <= MaxAdditionalKeyLength ? builder.ToString() : null;
+    }
+
     private static bool Matches(ReadOnlySpan<char> key)
     {
+        // Conferência barata: só as terminações com o mesmo último caractere são comparadas por inteiro.
+        var last = LastFolded(key);
+        if (last == '\0')
+            return false;
+
         foreach (var suffix in Suffixes)
         {
-            if (EndsWithNormalized(key, suffix, out _))
+            if (suffix[^1] == last && EndsWithNormalized(key, suffix, out _))
+                return true;
+        }
+
+        foreach (var suffix in _additional)
+        {
+            if (suffix[^1] == last && EndsWithNormalized(key, suffix, out _))
+                return true;
+        }
+
+        foreach (var prefix in Prefixes)
+        {
+            if (StartsWithNormalized(key, prefix))
                 return true;
         }
 
         foreach (var name in ExactNames)
         {
-            if (EndsWithNormalized(key, name, out var consumed) && IsOnlySeparators(key[..^consumed]))
+            if (name[^1] == last && EndsWithNormalized(key, name, out var consumed) && IsOnlySeparators(key[..^consumed]))
                 return true;
         }
 
         return false;
     }
 
+    /// <summary>Último caractere do nome que não é separador, normalizado; <c>'\0'</c> se só há separadores.</summary>
+    private static char LastFolded(ReadOnlySpan<char> key)
+    {
+        for (var k = key.Length - 1; k >= 0; k--)
+        {
+            if (!IsSeparator(key[k]))
+                return Fold(key[k]);
+        }
+
+        return '\0';
+    }
+
     /// <summary>
-    /// Compara o fim de <paramref name="key"/> com <paramref name="normalized"/> pulando separadores e ignorando maiúsculas (ASCII).
-    /// <paramref name="consumed"/> é quantos caracteres do fim de <paramref name="key"/> foram usados.
+    /// Compara o fim de <paramref name="key"/> com <paramref name="normalized"/> pulando separadores e ignorando maiúsculas e
+    /// acentos. <paramref name="consumed"/> é quantos caracteres do fim de <paramref name="key"/> foram usados.
     /// </summary>
     private static bool EndsWithNormalized(ReadOnlySpan<char> key, string normalized, out int consumed)
     {
@@ -71,7 +196,7 @@ internal static class SensitiveKeys
         {
             while (k >= 0 && IsSeparator(key[k]))
                 k--;
-            if (k < 0 || char.ToLowerInvariant(key[k]) != normalized[n])
+            if (k < 0 || Fold(key[k]) != normalized[n])
             {
                 consumed = 0;
                 return false;
@@ -82,6 +207,41 @@ internal static class SensitiveKeys
 
         consumed = key.Length - 1 - k;
         return true;
+    }
+
+    /// <summary>O mesmo que <see cref="EndsWithNormalized"/>, pelo início do nome.</summary>
+    private static bool StartsWithNormalized(ReadOnlySpan<char> key, string normalized)
+    {
+        var k = 0;
+        foreach (var expected in normalized)
+        {
+            while (k < key.Length && IsSeparator(key[k]))
+                k++;
+            if (k == key.Length || Fold(key[k]) != expected)
+                return false;
+            k++;
+        }
+
+        return true;
+    }
+
+    /// <summary>Minúscula sem acento (letras acentuadas do português e do espanhol); os demais caracteres só em minúscula.</summary>
+    internal static char Fold(char c)
+    {
+        if (char.IsAscii(c))
+            return char.ToLowerInvariant(c);
+
+        return char.ToLowerInvariant(c) switch
+        {
+            'á' or 'à' or 'â' or 'ã' or 'ä' => 'a',
+            'é' or 'è' or 'ê' or 'ë' => 'e',
+            'í' or 'ì' or 'î' or 'ï' => 'i',
+            'ó' or 'ò' or 'ô' or 'õ' or 'ö' => 'o',
+            'ú' or 'ù' or 'û' or 'ü' => 'u',
+            'ç' => 'c',
+            'ñ' => 'n',
+            var lower => lower,
+        };
     }
 
     private static bool IsOnlySeparators(ReadOnlySpan<char> text)
@@ -210,13 +370,22 @@ internal static class SensitiveText
     /// Valores de chaves sensíveis em pares <c>chave=valor</c> ou <c>chave: valor</c> (connection strings, JSON, cabeçalhos,
     /// argumentos): <c>Server=x;Password=abc;</c> vira <c>Server=x;Password=Redacted;</c>.
     /// </summary>
-    internal static string RedactKeyValues(string text)
+    internal static string RedactKeyValues(string text) => RedactKeyValues(text, out _);
+
+    /// <summary>
+    /// <see cref="RedactKeyValues(string)"/> informando quantos caracteres as buscas à frente (fim de linha e <c>;</c>)
+    /// percorreram: no máximo duas vezes o tamanho do texto, qualquer que seja a quantidade de pares (os testes conferem a
+    /// linearidade por aqui, sem depender de tempo).
+    /// </summary>
+    internal static string RedactKeyValues(string text, out int scannedChars)
     {
+        scannedChars = 0;
         var index = text.AsSpan().IndexOfAny('=', ':');
         if (index < 0)
             return text;
 
         StringBuilder? builder = null;
+        var lookahead = new Lookahead(text);
         var copied = 0;
         while (index >= 0 && index < text.Length)
         {
@@ -226,7 +395,8 @@ internal static class SensitiveText
                 // "://" de URL (já tratada) ou "C:/": não é separador de par.
             }
             else if (KeyBefore(text, index) is { IsEmpty: false } key && SensitiveKeys.IsSensitive(key)
-                && ValueAfter(text, next, IsCookieHeader(key), IsAuthorizationHeader(key), text[index] == '=') is var (valueStart, valueEnd) && valueEnd > valueStart
+                && ValueAfter(text, next, IsCookieHeader(key), IsAuthorizationHeader(key), text[index] == '=', ref lookahead) is var (valueStart, valueEnd)
+                && valueEnd > valueStart
                 && !text.AsSpan(valueStart, valueEnd - valueStart).Equals(RedactedValue, StringComparison.Ordinal))
             {
                 builder ??= new StringBuilder(text.Length);
@@ -239,10 +409,59 @@ internal static class SensitiveText
             index = relative < 0 ? -1 : next + relative;
         }
 
+        scannedChars = lookahead.Scanned;
         return builder is null ? text : builder.Append(text, copied, text.Length - copied).ToString();
     }
 
-    /// <summary>Palavra (letras, dígitos e separadores de nome) antes do separador, pulando espaços, tabulações e uma aspa de fechamento.</summary>
+    /// <summary>
+    /// Próxima quebra de linha e próximo <c>;</c> a partir de uma posição, com a última resposta guardada. As posições consultadas
+    /// só avançam, então cada trecho do texto é percorrido no máximo uma vez por busca: sem isso, <c>token=a&amp;token=a&amp;...</c>
+    /// sem quebra de linha procurava o fim do texto inteiro a cada par (custo quadrático).
+    /// </summary>
+    private struct Lookahead(string text)
+    {
+        private int _lineEndFrom = int.MaxValue;
+        private int _lineEnd;
+        private int _semicolonFrom = int.MaxValue;
+        private int _semicolon;
+
+        /// <summary>Caracteres percorridos pelas buscas.</summary>
+        public int Scanned { get; private set; }
+
+        /// <summary>Posição da próxima quebra de linha a partir de <paramref name="start"/>, ou o tamanho do texto.</summary>
+        public int LineEnd(int start)
+        {
+            // A resposta guardada vale se foi buscada a partir de um ponto anterior e ainda está à frente de start.
+            if (start < _lineEndFrom || _lineEnd < start)
+            {
+                var relative = text.AsSpan(start).IndexOfAny('\r', '\n');
+                Scanned += relative < 0 ? text.Length - start : relative + 1;
+                _lineEnd = relative < 0 ? text.Length : start + relative;
+                _lineEndFrom = start;
+            }
+
+            return _lineEnd;
+        }
+
+        /// <summary>Posição do próximo <c>;</c> a partir de <paramref name="start"/>, ou o tamanho do texto.</summary>
+        public int Semicolon(int start)
+        {
+            if (start < _semicolonFrom || _semicolon < start)
+            {
+                var relative = text.AsSpan(start).IndexOf(';');
+                Scanned += relative < 0 ? text.Length - start : relative + 1;
+                _semicolon = relative < 0 ? text.Length : start + relative;
+                _semicolonFrom = start;
+            }
+
+            return _semicolon;
+        }
+    }
+
+    /// <summary>
+    /// Palavra (letras, dígitos e separadores de nome) antes do separador, pulando espaços, tabulações e uma aspa de fechamento.
+    /// Letras acentuadas contam (<c>Código=...</c>).
+    /// </summary>
     private static ReadOnlySpan<char> KeyBefore(string text, int separator)
     {
         var end = separator;
@@ -252,7 +471,7 @@ internal static class SensitiveText
             end--;
 
         var start = end;
-        while (start > 0 && (char.IsAsciiLetterOrDigit(text[start - 1]) || text[start - 1] is '_' or '-' or '.'))
+        while (start > 0 && (char.IsLetterOrDigit(text[start - 1]) || text[start - 1] is '_' or '-' or '.'))
             start--;
 
         return text.AsSpan(start, end - start);
@@ -268,7 +487,7 @@ internal static class SensitiveText
     /// <summary>
     /// Trecho do valor depois do separador.
     /// </summary>
-    private static (int Start, int End) ValueAfter(string text, int start, bool isCookie, bool isAuthorization, bool isEquals)
+    private static (int Start, int End) ValueAfter(string text, int start, bool isCookie, bool isAuthorization, bool isEquals, ref Lookahead lookahead)
     {
         while (start < text.Length && (text[start] == ' ' || text[start] == '\t'))
             start++;
@@ -286,43 +505,31 @@ internal static class SensitiveText
 
         if (isAuthorization)
         {
-            var firstSpace = text.AsSpan(start).IndexOf(' ');
-            if (firstSpace > 0)
+            // Esquema (palavra só de letras seguida de espaço): percorre só a palavra, não o resto do texto.
+            var word = start;
+            while (word < text.Length && char.IsAsciiLetter(text[word]))
+                word++;
+            if (word > start && word < text.Length && text[word] == ' ')
             {
-                var scheme = text.AsSpan(start, firstSpace);
-                var isWord = true;
-                foreach (var c in scheme)
-                {
-                    if (!char.IsAsciiLetter(c)) { isWord = false; break; }
-                }
-
-                if (isWord)
-                {
-                    start += firstSpace + 1;
-                    while (start < text.Length && (text[start] == ' ' || text[start] == '\t'))
-                        start++;
-                }
+                start = word + 1;
+                while (start < text.Length && (text[start] == ' ' || text[start] == '\t'))
+                    start++;
             }
 
-            var lineEnd = text.AsSpan(start).IndexOfAny('\r', '\n');
-            var endLimit = lineEnd < 0 ? text.Length : start + lineEnd;
+            var endLimit = lookahead.LineEnd(start);
             var sep = text.AsSpan(start, endLimit - start).IndexOfAny(';', ']', '}');
             return (start, sep < 0 ? endLimit : start + sep);
         }
 
         if (isCookie)
-        {
-            var lineEnd = text.AsSpan(start).IndexOfAny('\r', '\n');
-            return (start, lineEnd < 0 ? text.Length : start + lineEnd);
-        }
+            return (start, lookahead.LineEnd(start));
 
         if (isEquals)
         {
-            var lineEnd = text.AsSpan(start).IndexOfAny('\r', '\n');
-            var limit = lineEnd < 0 ? text.Length : start + lineEnd;
-            var semi = text.AsSpan(start, limit - start).IndexOf(';');
-            if (semi >= 0)
-                return (start, start + semi);
+            var limit = lookahead.LineEnd(start);
+            var semi = lookahead.Semicolon(start);
+            if (semi < limit)
+                return (start, semi);
         }
 
         if (SchemeLength(text.AsSpan(start)) is > 0 and var schemeLength)

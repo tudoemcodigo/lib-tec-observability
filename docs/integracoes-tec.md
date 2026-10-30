@@ -48,7 +48,7 @@ flowchart LR
 
 | Componente | Fonte / medidor | Relação |
 |---|---|---|
-| 🔐 [TEC.Vault](https://github.com/tudoemcodigo/lib-tec-vault) | `TEC.Vault` | Operações do cofre no trace; chamadas HTTP a cofres (Azure Key Vault, AWS Secrets Manager, GCP Secret Manager, HashiCorp Vault, Infisical) fora dos traces e com caminhos redigidos; segredos da observabilidade podem vir dele; health check do cofre no readiness |
+| 🔐 [TEC.Vault](https://github.com/tudoemcodigo/lib-tec-vault) | `TEC.Vault` | Operações do cofre no trace; chamadas HTTP a cofres fora dos traces e com caminhos redigidos (Azure Key Vault, AWS Secrets Manager e GCP Secret Manager pelo host; HashiCorp Vault, Infisical e outros cofres próprios pelos hosts de `SecretStoreHosts`); segredos da observabilidade podem vir dele; health check do cofre no readiness |
 | 🧭 [TEC.Cqrs](https://github.com/tudoemcodigo/lib-tec-cqrs) | `TEC.Cqrs` | Spans e métricas do pipeline de commands/queries no mesmo trace da requisição |
 | 🛡️ [TEC.Security](https://github.com/tudoemcodigo/lib-tec-security) | `TEC.Security` | Spans e métricas de autenticação/autorização; o provedor de identidade pode entrar no readiness com `AddSsoHealthCheck` |
 | 🗄️ [TEC.ORM](https://github.com/tudoemcodigo/lib-tec-orm) | `TEC.ORM` | Spans e métricas de persistência; o banco pode entrar no readiness com `AddDatabaseHealthCheck` |
@@ -133,8 +133,11 @@ Consulte a [documentação do TEC.Vault](https://github.com/tudoemcodigo/lib-tec
 ## 🛡️ Segurança
 
 > [!IMPORTANT]
-> O nome e a versão dos segredos nunca vão para os traces: chamadas do `HttpClient` a cofres (Azure, AWS, GCP, HashiCorp Vault, Infisical) não geram span e os
-> spans do Azure SDK saem com `/secrets/***` e `az.keyvault.*` = `***` ([redacao.md](redacao.md#-traces)).
+> O nome e a versão dos segredos não vão para os traces: chamadas do `HttpClient` a cofres não geram span e os spans do
+> Azure SDK saem com `/secrets/***` e `az.keyvault.*` = `***` ([redacao.md](redacao.md#-traces)). Os cofres de nuvem são
+> reconhecidos pelo host; com o TEC.Vault apontando para um cofre próprio (HashiCorp Vault, Infisical...), liste o host em
+> `Observability:SecretStoreHosts` ([cofres](redacao.md#-cofres-de-segredos)): a biblioteca não conhece o TEC.Vault nem os
+> caminhos que ele usa.
 
 ---
 

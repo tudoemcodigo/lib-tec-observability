@@ -107,6 +107,12 @@ internal sealed class CorrelationIdMiddleware
         if (IsSafe(baggage))
             return baggage!;
 
+        // Com Provider None não há instrumentação do OpenTelemetry para preencher o Baggage acima: o Baggage recebido fica só no
+        // Activity da requisição (extraído pelo próprio ASP.NET Core).
+        var activityBaggage = Activity.Current?.GetBaggageItem(CorrelationId.AttributeName);
+        if (IsSafe(activityBaggage))
+            return activityBaggage!;
+
         return Activity.Current?.TraceId.ToString() ?? Guid.NewGuid().ToString("N");
     }
 

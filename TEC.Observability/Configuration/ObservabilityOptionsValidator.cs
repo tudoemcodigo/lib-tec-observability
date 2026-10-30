@@ -22,6 +22,9 @@ internal sealed class ObservabilityOptionsValidator(IConfiguration configuration
     /// <summary>Sinais com variáveis próprias (<c>OTEL_EXPORTER_OTLP_{SINAL}_ENDPOINT</c>/<c>_HEADERS</c>), que o SDK lê antes das gerais.</summary>
     private static readonly string[] OtlpSignals = ["TRACES", "METRICS", "LOGS"];
 
+    /// <summary>Teto das listas de nomes (chaves sensíveis, hosts de cofre, chaves de escopo): entrada limitada.</summary>
+    internal const int MaxListItems = 64;
+
     /// <summary>Pacote e chamada que trazem o exportador do Azure Monitor (citados na mensagem quando faltam).</summary>
     internal const string AzurePackageHint =
         "instale o pacote TEC.Observability.Azure e chame .AddAzureMonitorExporter() no retorno do AddTecObservability";
@@ -80,6 +83,24 @@ internal sealed class ObservabilityOptionsValidator(IConfiguration configuration
             errors.Add("BaggageAllowedHosts não pode ser nulo (use uma lista vazia).");
         else if (!options.BaggageAllowedHosts.All(IsHostPattern))
             errors.Add("BaggageAllowedHosts aceita só nomes de host, '*.sufixo' ou '*'.");
+        if (options.AdditionalSensitiveKeys is null)
+            errors.Add("AdditionalSensitiveKeys não pode ser nulo (use uma lista vazia).");
+        else if (options.AdditionalSensitiveKeys.Count > MaxListItems || options.AdditionalSensitiveKeys.Any(key => SensitiveKeys.Normalize(key) is null))
+        {
+            errors.Add($"AdditionalSensitiveKeys aceita até {MaxListItems} nomes, cada um com letras, dígitos e separadores (_ - . : espaço), "
+                + $"de {SensitiveKeys.MinAdditionalKeyLength} a {SensitiveKeys.MaxAdditionalKeyLength} caracteres.");
+        }
+        if (options.SecretStoreHosts is null)
+            errors.Add("SecretStoreHosts não pode ser nulo (use uma lista vazia).");
+        else if (options.SecretStoreHosts.Count > MaxListItems || !options.SecretStoreHosts.All(p => p != "*" && IsHostPattern(p)))
+            errors.Add($"SecretStoreHosts aceita até {MaxListItems} nomes de host ou '*.sufixo' (sem '*' sozinho).");
+        if (options.AllowedScopeKeys is null)
+            errors.Add("AllowedScopeKeys não pode ser nulo (use uma lista vazia).");
+        else if (options.AllowedScopeKeys.Count > MaxListItems
+            || options.AllowedScopeKeys.Any(key => string.IsNullOrWhiteSpace(key) || key.Length > 256 || key.AsSpan().IndexOfAny('\r', '\n') >= 0))
+        {
+            errors.Add($"AllowedScopeKeys aceita até {MaxListItems} chaves não vazias, de até 256 caracteres, sem quebra de linha.");
+        }
         if (errors.Count > 0)
             return errors;
 
@@ -206,6 +227,10 @@ internal sealed class ObservabilityOptionsValidator(IConfiguration configuration
             errors.Add("LogFile:FileName deve ser só um nome de arquivo, sem pasta nem extensão (ou vazio, para usar o ServiceName).");
         }
 
+        // A instância entra no nome do arquivo e no padrão de busca da retenção: só caracteres que não mudam nenhum dos dois.
+        if (file.InstanceName is null || (file.InstanceName.Length > 0 && !AsciiToken.IsValid(file.InstanceName, 64, "-_")))
+            errors.Add("LogFile:InstanceName aceita só letras, dígitos, '-' e '_', até 64 caracteres (ou vazio).");
+
         if (!Enum.IsDefined(file.RollingInterval))
             errors.Add($"LogFile:RollingInterval inválido: {file.RollingInterval}.");
         if (file.MaxFileSizeBytes is < 0 or > 0 and < 1024)
@@ -217,7 +242,7 @@ internal sealed class ObservabilityOptionsValidator(IConfiguration configuration
     }
 
     /// <summary><c>*</c>, <c>*.sufixo</c> ou um nome de host sem curinga.</summary>
-    private static bool IsHostPattern(string? pattern)
+    internal static bool IsHostPattern(string? pattern)
     {
         if (string.IsNullOrWhiteSpace(pattern) || pattern.Any(char.IsWhiteSpace))
             return false;
