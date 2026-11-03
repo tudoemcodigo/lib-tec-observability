@@ -28,6 +28,7 @@ OpenTelemetry · OTLP, Azure Monitor, console ou arquivo · Exportadores plugáv
 - [📥 Instalação](#-instalação)
 - [🚀 Início rápido](#-início-rápido)
 - [🗺️ Como funciona](#️-como-funciona)
+- [🧩 Diagrama de arquitetura](#-diagrama-de-arquitetura)
 - [📚 Documentação](#-documentação)
 - [⚡ Compatibilidade](#-compatibilidade)
 - [🛡️ Segurança](#️-segurança)
@@ -190,6 +191,98 @@ flowchart LR
 | `CorrelationId` | Nomes (`X-Correlation-ID`, `correlation.id`) e valor da requisição atual |
 | `ITelemetryExporter` | Ponto de extensão para backends de telemetria |
 | `AddAzureMonitorExporter` | Exportador do Azure Monitor (pacote `TEC.Observability.Azure`, mesmos namespaces) |
+
+## 🧩 Diagrama de arquitetura
+
+Componentes e ligações do `TEC.Observability`, gerados pelo [GitDiagram](https://gitdiagram.com/tudoemcodigo/lib-tec-observability) a partir da `main` em 02/11/2026. O diagrama é gerado por IA a partir de uma amostra do código: use-o como mapa de leitura, não como contrato.
+
+```mermaid
+flowchart TD
+
+subgraph group_setup["Setup and configuration"]
+  node_registration["Service registration"]
+  node_builder["Observability builder"]
+  node_options["Observability options"]
+  node_validation["Options validation"]
+  node_azureoptions["Azure options"]
+end
+
+subgraph group_telemetry["Telemetry pipeline"]
+  node_otel["OpenTelemetry SDK"]
+  node_pathfilter["Request path filtering"]
+  node_propagation["Context propagation"]
+  node_correlation["Correlation middleware"]
+  node_baggage["Baggage propagation"]
+  node_redaction["Telemetry redaction"]
+  node_logredaction["Log redaction<br/>[LogRedaction.cs]"]
+  node_exportselection["Exporter selection"]
+  node_exportcontract["Exporter contract"]
+  node_fileexporter["Log file exporter"]
+end
+
+subgraph group_health["Health reporting"]
+  node_healthsetup["Health registration"]
+  node_livecheck["Liveness check"]
+  node_dbcheck["Database check"]
+  node_httpcheck["HTTP dependency check"]
+  node_tcpcheck["TCP dependency check"]
+  node_healthsupport["Health response and cache"]
+  node_healthroutes["Health endpoints"]
+end
+
+subgraph group_azure["Azure integration"]
+  node_azureextension["Azure exporter registration"]
+  node_azureexporter["Azure Monitor exporter"]
+end
+
+node_service(("Service host"))
+node_destinations["Telemetry destinations"]
+node_azuremonitor["Azure Monitor"]
+
+node_service -->|"registers"| node_registration
+node_registration -->|"loads"| node_options
+node_registration -->|"returns"| node_builder
+node_registration -->|"validates"| node_validation
+node_registration -->|"configures"| node_otel
+node_registration -->|"registers"| node_pathfilter
+node_registration -->|"registers"| node_propagation
+node_registration -->|"configures"| node_redaction
+node_registration -->|"configures"| node_exportselection
+node_builder -->|"accepts"| node_exportcontract
+node_builder -->|"registers"| node_healthsetup
+node_otel -->|"redacts"| node_redaction
+node_otel -.->|"exports through"| node_exportselection
+node_exportselection -.->|"selects"| node_fileexporter
+node_exportselection -.->|"sends"| node_destinations
+node_exportcontract -->|"supports"| node_destinations
+node_service -.->|"handles requests"| node_correlation
+node_correlation -.->|"propagates"| node_baggage
+node_healthsetup -.->|"registers"| node_livecheck
+node_healthsetup -->|"registers"| node_dbcheck
+node_healthsetup -->|"registers"| node_httpcheck
+node_healthsetup -.->|"registers"| node_tcpcheck
+node_healthsetup -->|"uses cache"| node_healthsupport
+node_healthroutes -.->|"reports"| node_livecheck
+node_healthroutes -.->|"formats"| node_healthsupport
+node_azureextension -->|"extends"| node_builder
+node_azureextension -->|"configures"| node_azureoptions
+node_azureextension -->|"registers"| node_azureexporter
+node_azureexporter -.->|"exports to"| node_azuremonitor
+
+
+classDef toneNeutral fill:#f8fafc,stroke:#334155,stroke-width:1.5px,color:#0f172a
+classDef toneBlue fill:#dbeafe,stroke:#2563eb,stroke-width:1.5px,color:#172554
+classDef toneAmber fill:#fef3c7,stroke:#d97706,stroke-width:1.5px,color:#78350f
+classDef toneMint fill:#dcfce7,stroke:#16a34a,stroke-width:1.5px,color:#14532d
+classDef toneRose fill:#ffe4e6,stroke:#e11d48,stroke-width:1.5px,color:#881337
+classDef toneIndigo fill:#e0e7ff,stroke:#4f46e5,stroke-width:1.5px,color:#312e81
+classDef toneTeal fill:#ccfbf1,stroke:#0f766e,stroke-width:1.5px,color:#134e4a
+class node_registration,node_builder,node_options,node_validation,node_azureoptions toneBlue
+class node_otel,node_pathfilter,node_propagation,node_correlation,node_baggage,node_redaction,node_logredaction,node_exportselection,node_exportcontract,node_fileexporter toneAmber
+class node_healthsetup,node_livecheck,node_dbcheck,node_httpcheck,node_tcpcheck,node_healthsupport,node_healthroutes toneMint
+class node_azureextension,node_azureexporter toneRose
+class node_service,node_destinations,node_azuremonitor toneIndigo
+```
 
 ## 📚 Documentação
 
